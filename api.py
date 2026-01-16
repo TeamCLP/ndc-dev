@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 API FastAPI pour SCRIBE AI - Version FULL PRECISION avec SDPA
-Optimisée pour GPU haute mémoire (H100 90Go)
+Optimisée pour GPU haute mémoire (H100 80Go)
 """
 
 import os
@@ -40,14 +40,14 @@ generation_logger.setLevel(logging.INFO)
 # ===== CONFIGURATION =====
 class Settings:
     # MODÈLE FULL PRECISION
-    MODEL_PATH = "/home/quentin/Backup-OVH/newstart/mistral-banking-full-precision"
+    MODEL_PATH = "./mistral-banking-full-precision2/checkpoint-1000"
     
     HOST = os.getenv("API_HOST", "0.0.0.0")
     PORT = int(os.getenv("API_PORT", "5000"))
     
     # Paramètres de génération augmentés pour full precision
-    MAX_NEW_TOKENS = 1024  # Augmenté de 512
-    MAX_PROMPT_LENGTH = 2048  # Augmenté de 1024
+    MAX_NEW_TOKENS = 512  # Augmenté de 512
+    MAX_PROMPT_LENGTH = 1024  # Augmenté de 1024
     TEMPERATURE = 0.7
     TOP_P = 0.9
     REPETITION_PENALTY = 1.2
