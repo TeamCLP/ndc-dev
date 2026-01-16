@@ -5,15 +5,24 @@ import os
 import io
 from urllib.parse import urlparse, unquote
 import http.client
+import re
 
-# --- Config par variables d'env ---
-PORT = int(os.environ.get("PORT", "6006"))  # mets 6006 si tu remplaces TensorBoard
+# --- Config par variables d'env avec détection dynamique ---
+PORT = int(os.environ.get("PORT", "6006"))
 HOST = os.environ.get("HOST", "0.0.0.0")
 DOCROOT = os.environ.get("DOCROOT", "/home/quentin/ndc-dev/html")
-PATH_PREFIX = os.environ.get("PATH_PREFIX", "/scribe-ai/training-scribe/url-1").rstrip("/")
+
+# Détection automatique du nom du pod
+pod_name = os.environ.get("HOSTNAME", "test")  # HOSTNAME contient le nom du pod
+pod_base = re.sub(r'-[a-f0-9]+.*$', '', pod_name)  # Enlever le suffixe aléatoire
+
+PATH_PREFIX = os.environ.get("PATH_PREFIX", f"/scribe-ai/{pod_base}/url-1").rstrip("/")
 API_UPSTREAM_HOST = os.environ.get("API_UPSTREAM_HOST", "127.0.0.1")
 API_UPSTREAM_PORT = int(os.environ.get("API_UPSTREAM_PORT", "5000"))
 API_PREFIX = os.environ.get("API_PREFIX", f"{PATH_PREFIX}/api").rstrip("/")
+
+print(f"🚀 Serveur configuré pour le pod: {pod_base}")
+print(f"📡 URL: http://{HOST}:{PORT}{PATH_PREFIX}")
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     # ---- Static sous PATH_PREFIX ----

@@ -1,8 +1,15 @@
+// Détection automatique du préfixe
+const detectPrefix = () => {
+    const match = window.location.pathname.match(/^(\/scribe-ai\/[^\/]+\/url-1)/);
+    return match ? match[1] : "/scribe-ai/test/url-1";
+};
+const DYNAMIC_PREFIX = detectPrefix();
+
 // js/config.js
 export const Config = {
     // API Configuration
     API: {
-        BASE_URL: 'https://runai-poc-100.mlops.cagip.group.gca/scribe-ai/scribe2/url-1/api',
+        BASE_URL: `https://runai-poc-100.mlops.cagip.group.gca${DYNAMIC_PREFIX}/api`,
         ENDPOINTS: {
             HEALTH: '/health',
             GENERATE: '/generate',

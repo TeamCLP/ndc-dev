@@ -774,7 +774,7 @@ def main():
     tb_writer = SummaryWriter(model_config.tensorboard_dir)
     
     logger.info("=" * 60)
-    logger.info("=== ENTRAÎNEMENT FULL PRECISION (90 Go VRAM) ===")
+    logger.info("=== ENTRAÎNEMENT FULL PRECISION (80 Go VRAM) ===")
     logger.info("=" * 60)
     logger.info(f"Version transformers: {transformers.__version__}")
     logger.info(f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'}")
