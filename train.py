@@ -81,8 +81,8 @@ class ModelConfig:
     use_sdpa: bool = True
     
     # Paths
-    output_dir: str = "/home/quentin/mistral-banking-full-precision2"
-    tensorboard_dir: str = "/home/quentin/runs/mistral-banking-full-precision2"
+    output_dir: str = "/home/quentin/mistral-banking"
+    tensorboard_dir: str = "/home/quentin/runs/mistral-banking"
     
     seed: int = 42
 
