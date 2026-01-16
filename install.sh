@@ -2,9 +2,10 @@
 
 #===============================================================================
 # Script d'installation automatisé pour l'environnement NDC
-# - Installe Anaconda
+# - Installe Miniconda (plus léger qu'Anaconda)
 # - Crée un environnement conda Python 3.12
 # - Clone le repo et installe les dépendances
+# - Gère le proxy HTTPS
 #===============================================================================
 
 set -e  # Arrêter en cas d'erreur
@@ -22,10 +23,9 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 #===============================================================================
 # CONFIGURATION
 #===============================================================================
-ANACONDA_VERSION="2024.02-1"
-ANACONDA_INSTALLER="Anaconda3-${ANACONDA_VERSION}-Linux-x86_64.sh"
-ANACONDA_URL="https://repo.anaconda.com/archive/${ANACONDA_INSTALLER}"
-ANACONDA_INSTALL_DIR="$HOME/anaconda3"
+MINICONDA_INSTALLER="Miniconda3-latest-Linux-x86_64.sh"
+MINICONDA_URL="https://repo.anaconda.com/miniconda/$MINICONDA_INSTALLER"
+MINICONDA_INSTALL_DIR="$HOME/miniconda3"
 
 CONDA_ENV_NAME="ndc-dev"
 PYTHON_VERSION="3.12"
@@ -33,38 +33,75 @@ PYTHON_VERSION="3.12"
 REPO_URL="https://github.com/TeamCLP/ndc-dev.git"
 REPO_DIR="$HOME/ndc-dev"
 
+# Configuration du proxy
+PROXY_URL="http://10.246.42.30:8080"
+
 #===============================================================================
-# 1. Installation d'Anaconda
+# Configuration du proxy
 #===============================================================================
-install_anaconda() {
-    if [ -d "$ANACONDA_INSTALL_DIR" ]; then
-        log_warn "Anaconda déjà installé dans $ANACONDA_INSTALL_DIR"
+setup_proxy() {
+    log_info "Configuration du proxy..."
+    export HTTPS_PROXY="$PROXY_URL"
+    export HTTP_PROXY="$PROXY_URL"
+    export https_proxy="$PROXY_URL"
+    export http_proxy="$PROXY_URL"
+    
+    # Ne pas configurer CONDA_PROXY_SERVERS ici car cela cause l'erreur
+    unset CONDA_PROXY_SERVERS
+    
+    log_info "Proxy configuré: $PROXY_URL"
+}
+
+#===============================================================================
+# 1. Installation de Miniconda
+#===============================================================================
+install_miniconda() {
+    if [ -d "$MINICONDA_INSTALL_DIR" ]; then
+        log_warn "Miniconda déjà installé dans $MINICONDA_INSTALL_DIR"
         return 0
     fi
     
-    log_info "Téléchargement d'Anaconda ${ANACONDA_VERSION}..."
+    log_info "Téléchargement de Miniconda..."
     
     cd /tmp
-    if [ ! -f "$ANACONDA_INSTALLER" ]; then
-        wget --progress=bar:force "${ANACONDA_URL}" -O "$ANACONDA_INSTALLER"
+    if [ ! -f "$MINICONDA_INSTALLER" ]; then
+        # Utilisation de curl avec proxy
+        curl -L --proxy "$PROXY_URL" -o "$MINICONDA_INSTALLER" "$MINICONDA_URL"
+        
+        # Alternative avec wget si curl échoue
+        if [ $? -ne 0 ]; then
+            log_warn "Échec avec curl, tentative avec wget..."
+            wget --progress=bar:force -e use_proxy=yes -e https_proxy="$PROXY_URL" "$MINICONDA_URL" -O "$MINICONDA_INSTALLER"
+        fi
     fi
     
-    log_info "Installation d'Anaconda..."
-    bash "$ANACONDA_INSTALLER" -b -p "$ANACONDA_INSTALL_DIR"
+    log_info "Installation de Miniconda..."
+    bash "$MINICONDA_INSTALLER" -b -p "$MINICONDA_INSTALL_DIR"
     
     log_info "Initialisation de conda..."
-    "$ANACONDA_INSTALL_DIR/bin/conda" init bash
+    "$MINICONDA_INSTALL_DIR/bin/conda" init bash
     
-    rm -f "$ANACONDA_INSTALLER"
+    # Configuration du proxy pour conda (méthode correcte)
+    log_info "Configuration du proxy pour conda..."
+    "$MINICONDA_INSTALL_DIR/bin/conda" config --set proxy_servers.https "$PROXY_URL"
+    "$MINICONDA_INSTALL_DIR/bin/conda" config --set proxy_servers.http "$PROXY_URL"
     
-    log_info "Anaconda installé avec succès"
+    # Accepter les conditions d'utilisation
+    log_info "Acceptation des conditions d'utilisation conda..."
+    "$MINICONDA_INSTALL_DIR/bin/conda" config --set channel_priority strict
+    "$MINICONDA_INSTALL_DIR/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
+    "$MINICONDA_INSTALL_DIR/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
+    
+    rm -f "$MINICONDA_INSTALLER"
+    
+    log_info "Miniconda installé avec succès"
 }
 
 #===============================================================================
 # 2. Création de l'environnement conda
 #===============================================================================
 create_conda_env() {
-    source "$ANACONDA_INSTALL_DIR/etc/profile.d/conda.sh"
+    source "$MINICONDA_INSTALL_DIR/etc/profile.d/conda.sh"
     
     if conda env list | grep -q "^${CONDA_ENV_NAME} "; then
         log_warn "L'environnement '${CONDA_ENV_NAME}' existe déjà"
@@ -78,7 +115,9 @@ create_conda_env() {
     fi
     
     log_info "Création de l'environnement conda '${CONDA_ENV_NAME}' avec Python ${PYTHON_VERSION}..."
-    conda create -n "$CONDA_ENV_NAME" python="${PYTHON_VERSION}" -y
+    
+    # Utiliser conda-forge pour éviter les problèmes de ToS
+    conda create -n "$CONDA_ENV_NAME" python="$PYTHON_VERSION" -c conda-forge -y
     
     log_info "Environnement conda créé"
 }
@@ -102,6 +141,11 @@ clone_repo() {
     fi
     
     log_info "Clonage du repository..."
+    
+    # Configuration du proxy pour git
+    git config --global http.proxy "$PROXY_URL"
+    git config --global https.proxy "$PROXY_URL"
+    
     git clone "$REPO_URL" "$REPO_DIR"
     
     log_info "Repository cloné dans $REPO_DIR"
@@ -111,10 +155,17 @@ clone_repo() {
 # 4. Installation des dépendances
 #===============================================================================
 install_dependencies() {
-    source "$ANACONDA_INSTALL_DIR/etc/profile.d/conda.sh"
+    source "$MINICONDA_INSTALL_DIR/etc/profile.d/conda.sh"
     conda activate "$CONDA_ENV_NAME"
     
     cd "$REPO_DIR"
+    
+    # Configuration du proxy pour pip dans le répertoire utilisateur
+    mkdir -p ~/.pip
+    cat > ~/.pip/pip.conf << EOF
+[global]
+proxy = $PROXY_URL
+EOF
     
     if [ ! -f "requirements.txt" ]; then
         log_error "requirements.txt non trouvé dans $REPO_DIR"
@@ -143,7 +194,13 @@ create_launcher() {
 #!/bin/bash
 # Script de lancement pour train.py
 
-source "$ANACONDA_INSTALL_DIR/etc/profile.d/conda.sh"
+# Configuration du proxy
+export HTTPS_PROXY="$PROXY_URL"
+export HTTP_PROXY="$PROXY_URL"
+export https_proxy="$PROXY_URL"
+export http_proxy="$PROXY_URL"
+
+source "$MINICONDA_INSTALL_DIR/etc/profile.d/conda.sh"
 conda activate "$CONDA_ENV_NAME"
 
 cd "$REPO_DIR"
@@ -156,6 +213,19 @@ EOF
 }
 
 #===============================================================================
+# 6. Nettoyage de la configuration proxy (optionnel)
+#===============================================================================
+cleanup_proxy_config() {
+    read -p "Voulez-vous nettoyer la configuration proxy globale de git ? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        git config --global --unset http.proxy 2>/dev/null || true
+        git config --global --unset https.proxy 2>/dev/null || true
+        log_info "Configuration proxy git nettoyée"
+    fi
+}
+
+#===============================================================================
 # MAIN
 #===============================================================================
 main() {
@@ -164,11 +234,13 @@ main() {
     echo "=============================================="
     echo ""
     
-    install_anaconda
+    setup_proxy
+    install_miniconda
     create_conda_env
     clone_repo
     install_dependencies
     create_launcher
+    cleanup_proxy_config
     
     echo ""
     echo "=============================================="
@@ -184,6 +256,7 @@ main() {
     echo ""
     echo "Ou via le launcher: ${REPO_DIR}/run_train.sh"
     echo ""
+    echo "Note: Le proxy est configuré automatiquement dans le launcher"
 }
 
 main "$@"
