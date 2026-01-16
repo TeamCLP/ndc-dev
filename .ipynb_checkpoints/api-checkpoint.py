@@ -12,6 +12,7 @@ import re
 import time
 import random
 import numpy as np
+import glob  # AJOUTER CETTE LIGNE
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
@@ -37,10 +38,54 @@ generation_handler.setLevel(logging.INFO)
 generation_logger.addHandler(generation_handler)
 generation_logger.setLevel(logging.INFO)
 
+# AJOUTER LA FONCTION ICI - AVANT LA CLASSE SETTINGS
+def find_latest_checkpoint(base_path="/home/quentin/mistral-banking"):
+    """Trouve le checkpoint avec le plus grand nombre de steps"""
+    
+    logger.info(f"🔍 Recherche de checkpoints dans: {base_path}")
+    
+    # Vérifier que le dossier existe
+    if not os.path.exists(base_path):
+        logger.error(f"❌ Dossier {base_path} non trouvé")
+        return None
+    
+    # Chercher tous les dossiers checkpoint-*
+    checkpoint_pattern = os.path.join(base_path, "checkpoint-*")
+    checkpoint_dirs = glob.glob(checkpoint_pattern)
+    
+    logger.info(f"📁 Checkpoints trouvés: {len(checkpoint_dirs)}")
+    
+    if not checkpoint_dirs:
+        logger.warning(f"⚠️  Aucun checkpoint trouvé dans {base_path}")
+        return None
+    
+    # Extraire les numéros de steps et trouver le maximum
+    checkpoints_info = []
+    
+    for checkpoint_dir in checkpoint_dirs:
+        # Extraire le numéro de steps (ex: checkpoint-200 -> 200)
+        match = re.search(r'checkpoint-(\d+)', os.path.basename(checkpoint_dir))
+        if match:
+            steps = int(match.group(1))
+            checkpoints_info.append((steps, checkpoint_dir))
+            logger.info(f"  📦 {os.path.basename(checkpoint_dir)} -> {steps} steps")
+    
+    if not checkpoints_info:
+        logger.warning("❌ Aucun checkpoint avec format valide trouvé")
+        return None
+    
+    # Trier par nombre de steps et prendre le plus grand
+    checkpoints_info.sort(key=lambda x: x[0], reverse=True)
+    max_steps, latest_checkpoint = checkpoints_info[0]
+    
+    logger.info(f"🎯 Checkpoint sélectionné: {os.path.basename(latest_checkpoint)} ({max_steps} steps)")
+    
+    return latest_checkpoint
+
 # ===== CONFIGURATION =====
 class Settings:
-    # MODÈLE FULL PRECISION
-    MODEL_PATH = "/home/quentin/mistral-banking/checkpoint-200"
+    # MODÈLE FULL PRECISION - Détection automatique du dernier checkpoint
+    MODEL_PATH = find_latest_checkpoint() or "/home/quentin/mistral-banking/checkpoint-200"  # Fallback
     
     HOST = os.getenv("API_HOST", "0.0.0.0")
     PORT = int(os.getenv("API_PORT", "5000"))
@@ -59,6 +104,29 @@ class Settings:
     TORCH_DTYPE = "bfloat16"  # bfloat16 pour stabilité
 
 settings = Settings()
+# ===== CONFIGURATION DYNAMIQUE DU PRÉFIXE =====
+def get_dynamic_prefix():
+    """Détecte le préfixe dynamiquement basé sur le nom du pod"""
+    
+    # Méthode 1: Variable d'environnement du pod (Kubernetes met le nom du pod dans HOSTNAME)
+    pod_name = os.environ.get("HOSTNAME", "")
+    if pod_name:
+        # Extraire le nom de base du pod (ex: "test-abc123" -> "test")
+        pod_base = re.sub(r'-[a-f0-9]+.*$', '', pod_name)
+        return f"/scribe-ai/{pod_base}/url-1"
+    
+    # Méthode 2: Variable d'environnement personnalisée
+    pod_name = os.environ.get("POD_NAME", "")
+    if pod_name:
+        return f"/scribe-ai/{pod_name}/url-1"
+    
+    # Méthode 3: Fallback sur PATH_PREFIX ou défaut
+    return os.environ.get("PATH_PREFIX", "/scribe-ai/test/url-1").rstrip("/")
+
+# Détection du préfixe au démarrage
+DYNAMIC_PREFIX = get_dynamic_prefix()
+logger.info(f"🚀 API configurée avec préfixe dynamique: {DYNAMIC_PREFIX}")
+
 
 # ===== MODÈLES PYDANTIC =====
 class GenerateRequest(BaseModel):
@@ -752,6 +820,9 @@ app.add_middleware(
 
 @app.middleware("http")
 async def disable_cache(request: Request, call_next):
+    # Logger les requêtes pour debug
+    logger.info(f"📥 {request.method} {request.url.path}")
+    
     response = await call_next(request)
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, private"
     response.headers["Pragma"] = "no-cache"
@@ -1058,6 +1129,53 @@ async def get_model_info():
             "fields": list(FIELD_GENERATION_ORDER),
             "table_fields": list(TABLE_FIELDS.keys())
         }
+    }
+
+
+# ===== ROUTES AVEC PRÉFIXE DYNAMIQUE =====
+@app.get(f"{DYNAMIC_PREFIX}/api/health")
+async def health_check_with_prefix():
+    return await health_check()
+
+@app.post(f"{DYNAMIC_PREFIX}/api/generate")
+async def generate_field_with_prefix(request: GenerateRequest):
+    return await generate_field(request)
+
+@app.post(f"{DYNAMIC_PREFIX}/api/generate_multiple")
+async def generate_multiple_fields_with_prefix(request: GenerateMultipleRequest):
+    return await generate_multiple_fields(request)
+
+@app.post(f"{DYNAMIC_PREFIX}/api/validate")
+async def validate_field_with_prefix(request: ValidateRequest):
+    return await validate_field(request)
+
+@app.post(f"{DYNAMIC_PREFIX}/api/feedback/correction")
+async def submit_correction_with_prefix(request: FeedbackCorrectionRequest):
+    return await submit_correction(request)
+
+@app.post(f"{DYNAMIC_PREFIX}/api/feedback/rating")
+async def submit_rating_with_prefix(request: FeedbackRatingRequest):
+    return await submit_rating(request)
+
+@app.get(f"{DYNAMIC_PREFIX}/api/feedback/insights/")
+async def get_field_insights_with_prefix(field: str):
+    return await get_field_insights(field)
+
+@app.get(f"{DYNAMIC_PREFIX}/api/feedback/summary")
+async def get_feedback_summary_with_prefix():
+    return await get_feedback_summary()
+
+@app.get(f"{DYNAMIC_PREFIX}/api/model/info")
+async def get_model_info_with_prefix():
+    return await get_model_info()
+
+@app.get(f"{DYNAMIC_PREFIX}/api/config")
+async def get_config():
+    return {
+        "prefix": DYNAMIC_PREFIX,
+        "api_base_url": f"{DYNAMIC_PREFIX}/api",
+        "pod_name": os.environ.get("HOSTNAME", "unknown"),
+        "model_loaded": model_manager.is_loaded
     }
 
 # ===== MAIN =====

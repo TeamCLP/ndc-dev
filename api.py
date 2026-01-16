@@ -12,6 +12,7 @@ import re
 import time
 import random
 import numpy as np
+import glob  # AJOUTER CETTE LIGNE
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
@@ -37,10 +38,54 @@ generation_handler.setLevel(logging.INFO)
 generation_logger.addHandler(generation_handler)
 generation_logger.setLevel(logging.INFO)
 
+# AJOUTER LA FONCTION ICI - AVANT LA CLASSE SETTINGS
+def find_latest_checkpoint(base_path="/home/quentin/mistral-banking"):
+    """Trouve le checkpoint avec le plus grand nombre de steps"""
+    
+    logger.info(f"🔍 Recherche de checkpoints dans: {base_path}")
+    
+    # Vérifier que le dossier existe
+    if not os.path.exists(base_path):
+        logger.error(f"❌ Dossier {base_path} non trouvé")
+        return None
+    
+    # Chercher tous les dossiers checkpoint-*
+    checkpoint_pattern = os.path.join(base_path, "checkpoint-*")
+    checkpoint_dirs = glob.glob(checkpoint_pattern)
+    
+    logger.info(f"📁 Checkpoints trouvés: {len(checkpoint_dirs)}")
+    
+    if not checkpoint_dirs:
+        logger.warning(f"⚠️  Aucun checkpoint trouvé dans {base_path}")
+        return None
+    
+    # Extraire les numéros de steps et trouver le maximum
+    checkpoints_info = []
+    
+    for checkpoint_dir in checkpoint_dirs:
+        # Extraire le numéro de steps (ex: checkpoint-200 -> 200)
+        match = re.search(r'checkpoint-(\d+)', os.path.basename(checkpoint_dir))
+        if match:
+            steps = int(match.group(1))
+            checkpoints_info.append((steps, checkpoint_dir))
+            logger.info(f"  📦 {os.path.basename(checkpoint_dir)} -> {steps} steps")
+    
+    if not checkpoints_info:
+        logger.warning("❌ Aucun checkpoint avec format valide trouvé")
+        return None
+    
+    # Trier par nombre de steps et prendre le plus grand
+    checkpoints_info.sort(key=lambda x: x[0], reverse=True)
+    max_steps, latest_checkpoint = checkpoints_info[0]
+    
+    logger.info(f"🎯 Checkpoint sélectionné: {os.path.basename(latest_checkpoint)} ({max_steps} steps)")
+    
+    return latest_checkpoint
+
 # ===== CONFIGURATION =====
 class Settings:
-    # MODÈLE FULL PRECISION
-    MODEL_PATH = "/home/quentin/mistral-banking/checkpoint-200"
+    # MODÈLE FULL PRECISION - Détection automatique du dernier checkpoint
+    MODEL_PATH = find_latest_checkpoint() or "/home/quentin/mistral-banking/checkpoint-200"  # Fallback
     
     HOST = os.getenv("API_HOST", "0.0.0.0")
     PORT = int(os.getenv("API_PORT", "5000"))
