@@ -188,15 +188,13 @@ class WordToMarkdownExtractor:
         return False
     
     def extract_chapters(self) -> List[Chapter]:
-        """Extrait le contenu des chapitres présents dans la TDM"""
+        """Extrait TOUS les chapitres du document, log les écarts avec la TDM"""
         if not self.toc_entries:
             self.extract_toc()
         
         chapters = []
         current_chapter: Optional[Chapter] = None
-        
-        # Créer un set des titres normalisés de la TDM pour recherche rapide
-        toc_titles_normalized = {self._normalize_title(t[0]): t for t in self.toc_entries}
+        current_list_level = 0  # Pour tracker le niveau de liste
         
         # Tracking pour le rapport
         matched_titles: Set[str] = set()
@@ -211,6 +209,7 @@ class WordToMarkdownExtractor:
                 
                 # Ignorer les paragraphes vides
                 if not para_text:
+                    current_list_level = 0  # Reset liste si paragraphe vide
                     continue
                 
                 # Ignorer les entrées de TDM (on veut le vrai contenu)
@@ -228,49 +227,47 @@ class WordToMarkdownExtractor:
                         break
                 
                 if is_heading:
+                    current_list_level = 0  # Reset liste quand on change de section
+                    
                     # Ajouter aux titres du document
                     doc_heading_titles.add(self._normalize_title(para_text))
                     self.doc_headings.append((para_text, heading_level))
                     
-                    # Vérifier si ce titre est dans la TDM
-                    normalized = self._normalize_title(para_text)
+                    # Vérifier si ce titre est dans la TDM (juste pour le rapport)
                     in_toc = False
-                    
                     for toc_title, toc_level in self.toc_entries:
                         if self._titles_match(para_text, toc_title):
                             in_toc = True
-                            heading_level = toc_level
+                            heading_level = toc_level  # Utiliser le niveau de la TDM si trouvé
                             matched_titles.add(self._normalize_title(toc_title))
                             break
                     
-                    if in_toc:
-                        # Sauvegarder le chapitre précédent s'il existe
-                        if current_chapter and current_chapter.content:
-                            chapters.append(current_chapter)
-                        
-                        # Démarrer un nouveau chapitre
-                        current_chapter = Chapter(
-                            title=para_text,
-                            level=heading_level,
-                            content=[]
-                        )
-                        logger.debug(f"Chapitre trouvé: [{heading_level}] {para_text}")
-                    elif current_chapter:
-                        # Titre non dans TDM mais on est dans un chapitre
-                        # L'ajouter comme sous-titre dans le contenu
-                        md_heading = '#' * min(heading_level + 1, 6) + ' ' + para_text
-                        current_chapter.content.append(md_heading)
+                    # ON PREND TOUS LES CHAPITRES, qu'ils soient dans la TDM ou non
+                    # Sauvegarder le chapitre précédent s'il existe
+                    if current_chapter and current_chapter.content:
+                        chapters.append(current_chapter)
+                    
+                    # Démarrer un nouveau chapitre
+                    current_chapter = Chapter(
+                        title=para_text,
+                        level=heading_level,
+                        content=[]
+                    )
+                    logger.debug(f"Chapitre trouvé: [{heading_level}] {para_text} (TDM: {'✓' if in_toc else '✗'})")
                 else:
                     # Contenu normal ou liste
                     if current_chapter:
                         # Vérifier si c'est une liste
-                        list_item = self._parse_list_item(para)
+                        list_item, item_level = self._parse_list_item(para)
                         if list_item:
+                            current_list_level = item_level
                             current_chapter.content.append(list_item)
                         else:
+                            current_list_level = 0
                             current_chapter.content.append(para_text)
             
             elif isinstance(element, Table):
+                current_list_level = 0  # Reset liste
                 # Convertir le tableau en Markdown
                 if current_chapter:
                     table_md = self._table_to_markdown(element)
@@ -290,13 +287,13 @@ class WordToMarkdownExtractor:
         
         return chapters
     
-    def _parse_list_item(self, para: Paragraph) -> Optional[str]:
-        """Détecte et formate un élément de liste"""
+    def _parse_list_item(self, para: Paragraph) -> Tuple[Optional[str], int]:
+        """Détecte et formate un élément de liste avec son niveau d'indentation"""
         style_name = para.style.name if para.style else ""
         para_text = para.text.strip()
         
         if not para_text:
-            return None
+            return None, 0
         
         # Vérifier le style
         is_list_style = any(ls.lower() in style_name.lower() for ls in self.LIST_STYLES)
@@ -316,13 +313,18 @@ class WordToMarkdownExtractor:
                 ilvl = numPr.find(qn('w:ilvl'))
                 if ilvl is not None:
                     indent_level = int(ilvl.get(qn('w:val'), 0))
-                
-                # Type de liste (numId peut aider à distinguer)
-                numId = numPr.find(qn('w:numId'))
-                if numId is not None:
-                    num_id_val = numId.get(qn('w:val'))
-                    # Généralement, les listes à puces ont des numId différents
-                    # Mais c'est complexe, on se base sur le contenu
+            
+            # Vérifier aussi l'indentation via le style de paragraphe
+            ind = pPr.find(qn('w:ind'))
+            if ind is not None and not is_list_style:
+                left_indent = ind.get(qn('w:left'))
+                if left_indent:
+                    # Convertir l'indentation en niveau (environ 720 twips par niveau)
+                    try:
+                        indent_twips = int(left_indent)
+                        indent_level = max(indent_level, indent_twips // 720)
+                    except:
+                        pass
         
         # Détecter si le texte commence par un marqueur de liste
         bullet_patterns = [
@@ -336,6 +338,7 @@ class WordToMarkdownExtractor:
             r'^([a-zA-Z])[.)]\s+',
             r'^([ivxIVX]+)[.)]\s+',
             r'^(\d+\.\d+)[.)]\s*',
+            r'^(\d+\.\d+\.\d+)[.)]\s*',
         ]
         
         for pattern in bullet_patterns:
@@ -351,21 +354,27 @@ class WordToMarkdownExtractor:
                 para_text = re.sub(pattern, '', para_text)
                 break
         
+        # Détecter indentation par espaces/tabs en début de texte original
+        original_text = para.text
+        leading_spaces = len(original_text) - len(original_text.lstrip())
+        if leading_spaces > 0 and indent_level == 0:
+            # Environ 2-4 espaces par niveau
+            indent_level = leading_spaces // 3
+        
         # Formater en Markdown
         if is_list_style or is_bullet or is_numbered:
             indent = '  ' * indent_level
             if is_numbered:
-                return f"{indent}1. {para_text}"
+                return f"{indent}1. {para_text}", indent_level
             else:
-                return f"{indent}- {para_text}"
+                return f"{indent}- {para_text}", indent_level
         
-        return None
+        return None, 0
     
     def _generate_comparison_report(self, matched_titles: Set[str], doc_heading_titles: Set[str]):
         """Génère le rapport de comparaison TDM vs Document"""
-        toc_normalized = {self._normalize_title(t[0]) for t in self.toc_entries}
         
-        # Chapitres dans TDM mais pas dans le document
+        # Chapitres dans TDM mais pas trouvés dans le document
         in_toc_not_in_doc = []
         for toc_title, level in self.toc_entries:
             norm_title = self._normalize_title(toc_title)
@@ -375,7 +384,6 @@ class WordToMarkdownExtractor:
         # Chapitres dans le document mais pas dans la TDM
         in_doc_not_in_toc = []
         for doc_title, level in self.doc_headings:
-            norm_title = self._normalize_title(doc_title)
             found_in_toc = False
             for toc_title, _ in self.toc_entries:
                 if self._titles_match(doc_title, toc_title):
@@ -402,19 +410,20 @@ class WordToMarkdownExtractor:
         
         logger.info(f"\n📋 Entrées dans la TDM: {len(self.report.toc_entries)}")
         logger.info(f"📄 Titres dans le document: {len(self.report.doc_headings)}")
-        logger.info(f"✅ Chapitres correspondants: {len(self.report.matched_chapters)}")
+        logger.info(f"✅ Chapitres correspondants (TDM ↔ Doc): {len(self.report.matched_chapters)}")
+        logger.info(f"📝 Chapitres extraits (TOUS): {len(self.chapters)}")
         
         if self.report.in_toc_not_in_doc:
-            logger.warning(f"\n⚠️  DANS TDM MAIS PAS DANS LE DOCUMENT ({len(self.report.in_toc_not_in_doc)}):")
+            logger.warning(f"\n⚠️  DANS TDM MAIS PAS TROUVÉ DANS LE DOCUMENT ({len(self.report.in_toc_not_in_doc)}):")
             for title in self.report.in_toc_not_in_doc:
                 logger.warning(f"   ❌ {title}")
         else:
             logger.info(f"\n✅ Tous les chapitres de la TDM sont présents dans le document")
         
         if self.report.in_doc_not_in_toc:
-            logger.warning(f"\n⚠️  DANS DOCUMENT MAIS PAS DANS LA TDM ({len(self.report.in_doc_not_in_toc)}):")
+            logger.info(f"\n📌 DANS DOCUMENT MAIS PAS DANS LA TDM ({len(self.report.in_doc_not_in_toc)}) - Extraits quand même:")
             for title in self.report.in_doc_not_in_toc:
-                logger.warning(f"   ❌ {title}")
+                logger.info(f"   ➕ {title}")
         else:
             logger.info(f"\n✅ Tous les titres du document sont dans la TDM")
         
@@ -517,31 +526,37 @@ class WordToMarkdownExtractor:
         
         lines.append(f"📋 Entrées dans la TDM: {len(self.report.toc_entries)}")
         lines.append(f"📄 Titres dans le document: {len(self.report.doc_headings)}")
-        lines.append(f"✅ Chapitres correspondants: {len(self.report.matched_chapters)}")
+        lines.append(f"✅ Chapitres correspondants (TDM ↔ Doc): {len(self.report.matched_chapters)}")
+        lines.append(f"📝 Chapitres extraits (TOUS): {len(self.chapters)}")
         lines.append("")
         
         if self.report.in_toc_not_in_doc:
-            lines.append(f"⚠️  DANS TDM MAIS PAS DANS LE DOCUMENT ({len(self.report.in_toc_not_in_doc)}):")
+            lines.append(f"⚠️  DANS TDM MAIS PAS TROUVÉ DANS LE DOCUMENT ({len(self.report.in_toc_not_in_doc)}):")
             for title in self.report.in_toc_not_in_doc:
                 lines.append(f"   ❌ {title}")
             lines.append("")
         
         if self.report.in_doc_not_in_toc:
-            lines.append(f"⚠️  DANS DOCUMENT MAIS PAS DANS LA TDM ({len(self.report.in_doc_not_in_toc)}):")
+            lines.append(f"📌 DANS DOCUMENT MAIS PAS DANS LA TDM ({len(self.report.in_doc_not_in_toc)}) - Extraits quand même:")
             for title in self.report.in_doc_not_in_toc:
-                lines.append(f"   ❌ {title}")
+                lines.append(f"   ➕ {title}")
             lines.append("")
         
         lines.append("-" * 60)
         lines.append("DÉTAIL TDM:")
         for title, level in self.report.toc_entries:
-            lines.append(f"  [Niveau {level}] {title}")
+            indent = "  " * (level - 1)
+            lines.append(f"  {indent}[Niveau {level}] {title}")
         
         lines.append("")
         lines.append("-" * 60)
         lines.append("DÉTAIL TITRES DOCUMENT:")
         for title, level in self.report.doc_headings:
-            lines.append(f"  [Niveau {level}] {title}")
+            indent = "  " * (level - 1)
+            # Indiquer si le titre est dans la TDM ou non
+            in_toc = any(self._titles_match(title, t[0]) for t in self.report.toc_entries)
+            marker = "✓" if in_toc else "+"
+            lines.append(f"  {indent}[{marker} Niveau {level}] {title}")
         
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))
