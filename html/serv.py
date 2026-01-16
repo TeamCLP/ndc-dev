@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 import http.server
 import socketserver
@@ -10,8 +9,8 @@ import http.client
 # --- Config par variables d'env ---
 PORT = int(os.environ.get("PORT", "6006"))  # mets 6006 si tu remplaces TensorBoard
 HOST = os.environ.get("HOST", "0.0.0.0")
-DOCROOT = os.environ.get("DOCROOT", "/home/quentin/scribe/html")
-PATH_PREFIX = os.environ.get("PATH_PREFIX", "/scribe-ai/scribe2/url-1").rstrip("/")
+DOCROOT = os.environ.get("DOCROOT", "/home/quentin/ndc-dev/html")
+PATH_PREFIX = os.environ.get("PATH_PREFIX", "/scribe-ai/training-scribe/url-1").rstrip("/")
 API_UPSTREAM_HOST = os.environ.get("API_UPSTREAM_HOST", "127.0.0.1")
 API_UPSTREAM_PORT = int(os.environ.get("API_UPSTREAM_PORT", "5000"))
 API_PREFIX = os.environ.get("API_PREFIX", f"{PATH_PREFIX}/api").rstrip("/")

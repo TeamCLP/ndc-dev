@@ -47,7 +47,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('training_full_precision.log'),
+        logging.FileHandler('training.log'),
         logging.StreamHandler()
     ]
 )
@@ -69,9 +69,9 @@ class ModelConfig:
     ])
     
     # Limites de tokens - augmentées
-    max_prompt_length = 1024
-    max_response_length: int = 512  
-    max_length: int = 1536  
+    max_prompt_length = 1536
+    max_response_length: int = 768  
+    max_length: int = 2304  
     
     # Pas de quantization - full precision
     use_quantization: bool = False
@@ -91,8 +91,8 @@ class ModelConfig:
 class TrainingConfig:
     """Configuration d'entraînement - optimisée pour haute mémoire"""
     # Batch sizes augmentés significativement
-    per_device_train_batch_size: int = 4  # Augmenté de 2 à 4
-    per_device_eval_batch_size: int = 4  # Augmenté de 2 à 4
+    per_device_train_batch_size: int = 8  # Augmenté de 2 à 4
+    per_device_eval_batch_size: int = 8  # Augmenté de 2 à 4
     gradient_accumulation_steps: int = 4  # Réduit car batch plus grand
     gradient_checkpointing: bool = True
 
@@ -101,9 +101,6 @@ class TrainingConfig:
     num_train_epochs: int = 3  # Augmenté de 2 à 3
     warmup_ratio: float = 0.05  # Réduit car plus de steps
     weight_decay: float = 0.01
-    
-    # Gradient checkpointing désactivé (assez de VRAM)
-    gradient_checkpointing: bool = False
     
     # bfloat16 au lieu de fp16
     bf16: bool = True
@@ -123,8 +120,8 @@ class TrainingConfig:
     shuffle_seed: int = 42
     
     # Fichiers de données
-    train_file: str = "train_dataset.jsonl"
-    val_file: str = "val_dataset.jsonl"
+    train_file: str = "dataset/train_dataset.jsonl"
+    val_file: str = "dataset/val_dataset.jsonl"
     
     # Reprise d'entraînement
     resume_from_checkpoint: Optional[str] = None
@@ -733,8 +730,8 @@ def main():
     parser = argparse.ArgumentParser(description="Entraînement Mistral FULL PRECISION")
     parser.add_argument("--resume", action="store_true", help="Reprendre depuis le dernier checkpoint")
     parser.add_argument("--resume-from", type=str, help="Reprendre depuis un checkpoint spécifique")
-    parser.add_argument("--train-file", type=str, default="train_dataset.jsonl", help="Fichier d'entraînement")
-    parser.add_argument("--val-file", type=str, default="val_dataset.jsonl", help="Fichier de validation")
+    parser.add_argument("--train-file", type=str, default="dataset/train_dataset.jsonl", help="Fichier d'entraînement")
+    parser.add_argument("--val-file", type=str, default="dataset/val_dataset.jsonl", help="Fichier de validation")
     parser.add_argument("--use-split", action="store_true", help="Utiliser l'ancienne méthode de split")
     parser.add_argument("--no-sdpa", action="store_true", help="Désactiver SDPA")
     args = parser.parse_args()
