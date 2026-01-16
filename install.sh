@@ -2,7 +2,6 @@
 
 #===============================================================================
 # Script d'installation automatisé pour l'environnement NDC
-# - Configure le proxy
 # - Installe Anaconda
 # - Crée un environnement conda Python 3.12
 # - Clone le repo et installe les dépendances
@@ -21,13 +20,9 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 #===============================================================================
-# CONFIGURATION - À MODIFIER SELON VOS BESOINS
+# CONFIGURATION
 #===============================================================================
-PROXY_HOST="x.x.x.x"
-PROXY_PORT="8080"
-PROXY_URL="http://${PROXY_HOST}:${PROXY_PORT}"
-
-ANACONDA_VERSION="2024.02-1"  # Version stable récente
+ANACONDA_VERSION="2024.02-1"
 ANACONDA_INSTALLER="Anaconda3-${ANACONDA_VERSION}-Linux-x86_64.sh"
 ANACONDA_URL="https://repo.anaconda.com/archive/${ANACONDA_INSTALLER}"
 ANACONDA_INSTALL_DIR="$HOME/anaconda3"
@@ -39,42 +34,7 @@ REPO_URL="https://github.com/TeamCLP/ndc-dev.git"
 REPO_DIR="$HOME/ndc-dev"
 
 #===============================================================================
-# 1. Configuration du Proxy
-#===============================================================================
-setup_proxy() {
-    log_info "Configuration du proxy..."
-    
-    export HTTP_PROXY="${PROXY_URL}"
-    export HTTPS_PROXY="${PROXY_URL}"
-    export http_proxy="${PROXY_URL}"
-    export https_proxy="${PROXY_URL}"
-    export NO_PROXY="localhost,127.0.0.1"
-    export no_proxy="localhost,127.0.0.1"
-    
-    # Persister dans .bashrc si pas déjà présent
-    if ! grep -q "HTTPS_PROXY" "$HOME/.bashrc" 2>/dev/null; then
-        log_info "Ajout du proxy dans ~/.bashrc..."
-        cat >> "$HOME/.bashrc" << EOF
-
-# Proxy configuration
-export HTTP_PROXY="${PROXY_URL}"
-export HTTPS_PROXY="${PROXY_URL}"
-export http_proxy="${PROXY_URL}"
-export https_proxy="${PROXY_URL}"
-export NO_PROXY="localhost,127.0.0.1"
-export no_proxy="localhost,127.0.0.1"
-EOF
-    fi
-    
-    # Configuration git pour le proxy
-    git config --global http.proxy "${PROXY_URL}"
-    git config --global https.proxy "${PROXY_URL}"
-    
-    log_info "Proxy configuré: ${PROXY_URL}"
-}
-
-#===============================================================================
-# 2. Installation d'Anaconda
+# 1. Installation d'Anaconda
 #===============================================================================
 install_anaconda() {
     if [ -d "$ANACONDA_INSTALL_DIR" ]; then
@@ -86,51 +46,22 @@ install_anaconda() {
     
     cd /tmp
     if [ ! -f "$ANACONDA_INSTALLER" ]; then
-        wget --progress=bar:force -e use_proxy=yes -e https_proxy="${PROXY_URL}" \
-            "${ANACONDA_URL}" -O "$ANACONDA_INSTALLER"
+        wget --progress=bar:force "${ANACONDA_URL}" -O "$ANACONDA_INSTALLER"
     fi
     
     log_info "Installation d'Anaconda..."
     bash "$ANACONDA_INSTALLER" -b -p "$ANACONDA_INSTALL_DIR"
     
-    # Initialiser conda
     log_info "Initialisation de conda..."
     "$ANACONDA_INSTALL_DIR/bin/conda" init bash
     
-    # Nettoyer l'installeur
     rm -f "$ANACONDA_INSTALLER"
     
     log_info "Anaconda installé avec succès"
 }
 
 #===============================================================================
-# 3. Activation de conda et configuration
-#===============================================================================
-setup_conda() {
-    log_info "Configuration de conda..."
-    
-    # Charger conda
-    source "$ANACONDA_INSTALL_DIR/etc/profile.d/conda.sh"
-    
-    # Configurer le proxy pour conda
-    conda config --set proxy_servers.http "${PROXY_URL}"
-    conda config --set proxy_servers.https "${PROXY_URL}"
-    
-    # Configurer pip pour utiliser le proxy globalement
-    mkdir -p "$HOME/.config/pip"
-    cat > "$HOME/.config/pip/pip.conf" << EOF
-[global]
-proxy = ${PROXY_URL}
-trusted-host = pypi.org
-               pypi.python.org
-               files.pythonhosted.org
-EOF
-    
-    log_info "Conda et pip configurés pour le proxy"
-}
-
-#===============================================================================
-# 4. Création de l'environnement conda
+# 2. Création de l'environnement conda
 #===============================================================================
 create_conda_env() {
     source "$ANACONDA_INSTALL_DIR/etc/profile.d/conda.sh"
@@ -153,7 +84,7 @@ create_conda_env() {
 }
 
 #===============================================================================
-# 5. Clone du repository
+# 3. Clone du repository
 #===============================================================================
 clone_repo() {
     if [ -d "$REPO_DIR" ]; then
@@ -177,7 +108,7 @@ clone_repo() {
 }
 
 #===============================================================================
-# 6. Installation des dépendances
+# 4. Installation des dépendances
 #===============================================================================
 install_dependencies() {
     source "$ANACONDA_INSTALL_DIR/etc/profile.d/conda.sh"
@@ -190,8 +121,8 @@ install_dependencies() {
         exit 1
     fi
     
-    log_info "Installation des dépendances conda (si environment.yml existe)..."
     if [ -f "environment.yml" ]; then
+        log_info "Installation des dépendances conda depuis environment.yml..."
         conda env update -f environment.yml --prune
     fi
     
@@ -203,7 +134,7 @@ install_dependencies() {
 }
 
 #===============================================================================
-# 7. Création du script de lancement
+# 5. Création du script de lancement
 #===============================================================================
 create_launcher() {
     LAUNCHER="$REPO_DIR/run_train.sh"
@@ -212,17 +143,9 @@ create_launcher() {
 #!/bin/bash
 # Script de lancement pour train.py
 
-# Configuration du proxy
-export HTTP_PROXY="${PROXY_URL}"
-export HTTPS_PROXY="${PROXY_URL}"
-export http_proxy="${PROXY_URL}"
-export https_proxy="${PROXY_URL}"
-
-# Activation de l'environnement conda
 source "$ANACONDA_INSTALL_DIR/etc/profile.d/conda.sh"
 conda activate "$CONDA_ENV_NAME"
 
-# Lancement de l'entraînement
 cd "$REPO_DIR"
 python train.py "\$@"
 EOF
@@ -241,15 +164,7 @@ main() {
     echo "=============================================="
     echo ""
     
-    # Vérifier qu'on n'est pas root
-    if [ "$EUID" -eq 0 ]; then
-        log_error "Ne pas exécuter ce script en tant que root"
-        exit 1
-    fi
-    
-    setup_proxy
     install_anaconda
-    setup_conda
     create_conda_env
     clone_repo
     install_dependencies
@@ -260,22 +175,15 @@ main() {
     log_info "Installation terminée avec succès!"
     echo "=============================================="
     echo ""
-    echo "Pour utiliser l'environnement:"
+    echo "Pour lancer l'entraînement:"
     echo ""
-    echo "  1. Recharger votre shell ou exécuter:"
-    echo "     source ~/.bashrc"
+    echo "  source ~/.bashrc"
+    echo "  conda activate ${CONDA_ENV_NAME}"
+    echo "  cd ${REPO_DIR}"
+    echo "  python train.py"
     echo ""
-    echo "  2. Activer l'environnement:"
-    echo "     conda activate ${CONDA_ENV_NAME}"
-    echo ""
-    echo "  3. Lancer l'entraînement:"
-    echo "     cd ${REPO_DIR}"
-    echo "     python train.py"
-    echo ""
-    echo "  Ou utilisez le script de lancement:"
-    echo "     ${REPO_DIR}/run_train.sh"
+    echo "Ou via le launcher: ${REPO_DIR}/run_train.sh"
     echo ""
 }
 
-# Exécution
 main "$@"
