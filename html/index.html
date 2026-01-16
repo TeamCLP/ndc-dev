@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCRIBE AI - Générateur Intelligent de Notes de Cadrage</title>
+    
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    
+    <!-- Bibliothèques externes -->
+    <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-content">
+            <div class="loading-logo">🤖</div>
+            <h2>SCRIBE AI</h2>
+            <p>Chargement de votre assistant intelligent...</p>
+        </div>
+    </div>
+    
+    <!-- Menu Toggle (Mobile) -->
+    <button class="menu-toggle" id="menuToggle">☰</button>
+    
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar"></nav>
+        
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Actions Bar -->
+            <div class="actions-bar" id="actionsBar"></div>
+            
+            <!-- Content Area -->
+            <div class="content-area" id="contentArea"></div>
+        </div>
+    </div>
+    
+    <!-- Insights Button -->
+    <!-- button class="insights-button" id="insightsButton">📊</button-->
+    
+    <!-- Modals Container -->
+    <div id="modalsContainer"></div>
+    
+    <!-- Scripts -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
