@@ -4,7 +4,7 @@
 # Script d'installation automatisé pour l'environnement NDC
 # - Installe Miniconda (plus léger qu'Anaconda)
 # - Crée un environnement conda Python 3.12
-# - Clone le repo et installe les dépendances
+# - Installe les dépendances du repo courant
 # - Gère le proxy HTTPS
 #===============================================================================
 
@@ -30,8 +30,8 @@ MINICONDA_INSTALL_DIR="$HOME/miniconda3"
 CONDA_ENV_NAME="ndc-dev"
 PYTHON_VERSION="3.12"
 
-REPO_URL="https://github.com/TeamCLP/ndc-dev.git"
-REPO_DIR="$HOME/ndc-dev"
+# Le répertoire courant est le repo
+REPO_DIR="$(pwd)"
 
 # Configuration du proxy
 PROXY_URL="http://10.246.42.30:8080"
@@ -123,36 +123,7 @@ create_conda_env() {
 }
 
 #===============================================================================
-# 3. Clone du repository
-#===============================================================================
-clone_repo() {
-    if [ -d "$REPO_DIR" ]; then
-        log_warn "Le répertoire $REPO_DIR existe déjà"
-        read -p "Voulez-vous le supprimer et re-cloner ? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            rm -rf "$REPO_DIR"
-        else
-            log_info "Mise à jour du repo existant..."
-            cd "$REPO_DIR"
-            git pull
-            return 0
-        fi
-    fi
-    
-    log_info "Clonage du repository..."
-    
-    # Configuration du proxy pour git
-    git config --global http.proxy "$PROXY_URL"
-    git config --global https.proxy "$PROXY_URL"
-    
-    git clone "$REPO_URL" "$REPO_DIR"
-    
-    log_info "Repository cloné dans $REPO_DIR"
-}
-
-#===============================================================================
-# 4. Installation des dépendances
+# 3. Installation des dépendances
 #===============================================================================
 install_dependencies() {
     source "$MINICONDA_INSTALL_DIR/etc/profile.d/conda.sh"
@@ -185,7 +156,7 @@ EOF
 }
 
 #===============================================================================
-# 5. Création du script de lancement
+# 4. Création du script de lancement
 #===============================================================================
 create_launcher() {
     LAUNCHER="$REPO_DIR/run_train.sh"
@@ -213,19 +184,6 @@ EOF
 }
 
 #===============================================================================
-# 6. Nettoyage de la configuration proxy (optionnel)
-#===============================================================================
-cleanup_proxy_config() {
-    read -p "Voulez-vous nettoyer la configuration proxy globale de git ? (y/N) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        git config --global --unset http.proxy 2>/dev/null || true
-        git config --global --unset https.proxy 2>/dev/null || true
-        log_info "Configuration proxy git nettoyée"
-    fi
-}
-
-#===============================================================================
 # MAIN
 #===============================================================================
 main() {
@@ -234,13 +192,13 @@ main() {
     echo "=============================================="
     echo ""
     
+    log_info "Répertoire de travail: $REPO_DIR"
+    
     setup_proxy
     install_miniconda
     create_conda_env
-    clone_repo
     install_dependencies
     create_launcher
-    cleanup_proxy_config
     
     echo ""
     echo "=============================================="
@@ -251,12 +209,11 @@ main() {
     echo ""
     echo "  source ~/.bashrc"
     echo "  conda activate ${CONDA_ENV_NAME}"
-    echo "  cd ${REPO_DIR}"
     echo "  python train.py"
     echo ""
-    echo "Ou via le launcher: ${REPO_DIR}/run_train.sh"
+    echo "Ou via le launcher: ./run_train.sh"
     echo ""
-    echo "Note: Le proxy est configuré automatiquement dans le launcher"
+    echo "Note: Le proxy reste configuré de manière permanente"
 }
 
 main "$@"
