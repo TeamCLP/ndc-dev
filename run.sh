@@ -2,10 +2,10 @@
 
 #===============================================================================
 # Script de démarrage des services NDC
+# - Active l'environnement conda
 # - Vérifie la présence du modèle mistral-banking
 # - Télécharge le modèle si nécessaire
 # - Arrête les processus existants
-# - Active l'environnement conda
 # - Lance l'API et le serveur HTML en parallèle
 #===============================================================================
 
@@ -26,7 +26,27 @@ CHECKPOINT_DIR="$MODEL_DIR/checkpoint-100"
 HUGGINGFACE_REPO="TeamCLP/ndc-dev"
 
 #===============================================================================
-# 1. Vérification et téléchargement du modèle
+# 1. Configuration de l'environnement
+#===============================================================================
+setup_environment() {
+    log_info "Configuration de l'environnement..."
+    
+    # Configuration du proxy
+    export HTTPS_PROXY="$PROXY_URL"
+    export HTTP_PROXY="$PROXY_URL"
+    export https_proxy="$PROXY_URL"
+    export http_proxy="$PROXY_URL"
+    
+    # Activation de conda
+    source ~/.bashrc
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+    conda activate ndc-dev
+    
+    log_info "Environnement conda activé"
+}
+
+#===============================================================================
+# 2. Vérification et téléchargement du modèle
 #===============================================================================
 check_and_download_model() {
     log_info "Vérification de la présence du modèle..."
@@ -42,13 +62,7 @@ check_and_download_model() {
     # Créer les dossiers s'ils n'existent pas
     mkdir -p "$CHECKPOINT_DIR"
     
-    # Configuration du proxy pour git et huggingface-hub
-    export HTTPS_PROXY="$PROXY_URL"
-    export HTTP_PROXY="$PROXY_URL"
-    export https_proxy="$PROXY_URL"
-    export http_proxy="$PROXY_URL"
-    
-    # Téléchargement avec huggingface-hub
+    # Téléchargement avec huggingface-hub (conda déjà activé)
     log_info "Téléchargement du modèle depuis HuggingFace dans $CHECKPOINT_DIR..."
     
     # Utilisation de huggingface_hub pour télécharger directement dans checkpoint-100
@@ -81,7 +95,7 @@ except Exception as e:
 }
 
 #===============================================================================
-# 2. Arrêt des processus existants
+# 3. Arrêt des processus existants
 #===============================================================================
 stop_existing_processes() {
     log_info "Arrêt des processus existants..."
@@ -90,26 +104,6 @@ stop_existing_processes() {
     pkill -9 -f "tensorboard" 2>/dev/null || true
     
     log_info "Processus existants arrêtés"
-}
-
-#===============================================================================
-# 3. Configuration de l'environnement
-#===============================================================================
-setup_environment() {
-    log_info "Configuration de l'environnement..."
-    
-    # Configuration du proxy
-    export HTTPS_PROXY="$PROXY_URL"
-    export HTTP_PROXY="$PROXY_URL"
-    export https_proxy="$PROXY_URL"
-    export http_proxy="$PROXY_URL"
-    
-    # Activation de conda
-    source ~/.bashrc
-    source "$HOME/miniconda3/etc/profile.d/conda.sh"
-    conda activate ndc-dev
-    
-    log_info "Environnement configuré"
 }
 
 #===============================================================================
@@ -153,9 +147,9 @@ main() {
     echo "=============================================="
     echo ""
     
+    setup_environment
     check_and_download_model
     stop_existing_processes
-    setup_environment
     start_services
 }
 
