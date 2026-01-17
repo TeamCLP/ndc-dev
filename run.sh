@@ -2,6 +2,8 @@
 
 #===============================================================================
 # Script de démarrage des services NDC
+# - Vérifie la présence du modèle mistral-banking
+# - Télécharge le modèle si nécessaire
 # - Arrête les processus existants
 # - Active l'environnement conda
 # - Lance l'API et le serveur HTML en parallèle
@@ -17,11 +19,69 @@ log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Configuration du proxy
+# Configuration
 PROXY_URL="http://10.246.42.30:8080"
+MODEL_DIR="/home/quentin/mistral-banking"
+CHECKPOINT_DIR="$MODEL_DIR/checkpoint-100"
+HUGGINGFACE_REPO="TeamCLP/ndc-dev"
 
 #===============================================================================
-# 1. Arrêt des processus existants
+# 1. Vérification et téléchargement du modèle
+#===============================================================================
+check_and_download_model() {
+    log_info "Vérification de la présence du modèle..."
+    
+    # Vérifier si le dossier existe et contient au moins un checkpoint
+    if [[ -d "$MODEL_DIR" ]] && ls "$MODEL_DIR"/checkpoint-* 1> /dev/null 2>&1; then
+        log_info "Modèle trouvé dans $MODEL_DIR"
+        return 0
+    fi
+    
+    log_warn "Modèle non trouvé ou incomplet. Téléchargement en cours..."
+    
+    # Créer les dossiers s'ils n'existent pas
+    mkdir -p "$CHECKPOINT_DIR"
+    
+    # Configuration du proxy pour git et huggingface-hub
+    export HTTPS_PROXY="$PROXY_URL"
+    export HTTP_PROXY="$PROXY_URL"
+    export https_proxy="$PROXY_URL"
+    export http_proxy="$PROXY_URL"
+    
+    # Téléchargement avec huggingface-hub
+    log_info "Téléchargement du modèle depuis HuggingFace dans $CHECKPOINT_DIR..."
+    
+    # Utilisation de huggingface_hub pour télécharger directement dans checkpoint-100
+    python -c "
+import os
+from huggingface_hub import snapshot_download
+
+# Configuration du proxy pour les requêtes Python
+os.environ['HTTPS_PROXY'] = '$PROXY_URL'
+os.environ['HTTP_PROXY'] = '$PROXY_URL'
+
+try:
+    snapshot_download(
+        repo_id='$HUGGINGFACE_REPO',
+        local_dir='$CHECKPOINT_DIR',
+        local_dir_use_symlinks=False
+    )
+    print('Téléchargement terminé avec succès')
+except Exception as e:
+    print(f'Erreur lors du téléchargement: {e}')
+    exit(1)
+"
+    
+    if [ $? -eq 0 ]; then
+        log_info "Modèle téléchargé avec succès dans $CHECKPOINT_DIR"
+    else
+        log_error "Échec du téléchargement du modèle"
+        exit 1
+    fi
+}
+
+#===============================================================================
+# 2. Arrêt des processus existants
 #===============================================================================
 stop_existing_processes() {
     log_info "Arrêt des processus existants..."
@@ -33,7 +93,7 @@ stop_existing_processes() {
 }
 
 #===============================================================================
-# 2. Configuration de l'environnement
+# 3. Configuration de l'environnement
 #===============================================================================
 setup_environment() {
     log_info "Configuration de l'environnement..."
@@ -53,7 +113,7 @@ setup_environment() {
 }
 
 #===============================================================================
-# 3. Lancement des services
+# 4. Lancement des services
 #===============================================================================
 start_services() {
     log_info "Démarrage des services..."
@@ -93,6 +153,7 @@ main() {
     echo "=============================================="
     echo ""
     
+    check_and_download_model
     stop_existing_processes
     setup_environment
     start_services
