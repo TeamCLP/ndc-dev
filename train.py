@@ -98,7 +98,7 @@ class TrainingConfig:
 
     # Learning rate légèrement réduit pour stabilité avec full precision
     learning_rate: float = 3e-5  # Réduit de 5e-5
-    num_train_epochs: int = 3  # Augmenté de 2 à 3
+    num_train_epochs: int = 2 
     warmup_ratio: float = 0.05  # Réduit car plus de steps
     weight_decay: float = 0.01
     
