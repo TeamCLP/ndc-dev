@@ -52,7 +52,7 @@ export class MusicPlayer {
     }
     
     init() {
-        console.log('🎵 MusicPlayer.init() appelé');
+        console.log('♫ MusicPlayer.init() appelé');
         this.createPlayerHTML();
         console.log('  ✓ HTML créé');
         this.bindEvents();
@@ -84,9 +84,9 @@ export class MusicPlayer {
         }
         
         // Ajouter un indicateur de statut audio
-        console.log('🎵 MusicPlayer initialisé');
+        console.log('♫ MusicPlayer initialisé');
         console.log('🔊 Volume initial:', Math.round(this.audio.volume * 100) + '%');
-        console.log('🎵 Piste chargée:', this.playlist[this.currentTrack].title);
+        console.log('♫ Piste chargée:', this.playlist[this.currentTrack].title);
     }
     
     createPlayerHTML() {
@@ -101,7 +101,7 @@ export class MusicPlayer {
         const musicButton = document.createElement('button');
         musicButton.className = 'music-button';
         musicButton.id = 'musicButton';
-        musicButton.innerHTML = '🎵';
+        musicButton.innerHTML = '♫';
         musicButton.title = 'Lecteur de musique';
         document.body.appendChild(musicButton);
         
@@ -111,7 +111,7 @@ export class MusicPlayer {
         playerContainer.id = 'musicPlayer';
         playerContainer.innerHTML = `
             <div class="music-player-header">
-                <h4>🎵 Musique d'ambiance</h4>
+                <h4>♫ Musique d'ambiance</h4>
                 <button class="music-close" id="musicClose">×</button>
             </div>
             
@@ -526,14 +526,14 @@ export class MusicPlayer {
     }
     
     bindEvents() {
-        console.log('🎵 MusicPlayer.bindEvents() appelé');
+        console.log('♫ MusicPlayer.bindEvents() appelé');
         
         // Bouton musique
         const musicButton = document.getElementById('musicButton');
         if (musicButton) {
             console.log('  ✓ Bouton musique trouvé, ajout du listener');
             musicButton.addEventListener('click', () => {
-                console.log('🎵 CLIC sur bouton musique!');
+                console.log('♫ CLIC sur bouton musique!');
                 this.togglePlayer();
             });
         } else {
@@ -544,7 +544,7 @@ export class MusicPlayer {
         const closeButton = document.getElementById('musicClose');
         if (closeButton) {
             closeButton.addEventListener('click', () => {
-                console.log('🎵 Fermeture du lecteur');
+                console.log('♫ Fermeture du lecteur');
                 this.togglePlayer();
             });
         }
@@ -627,7 +627,7 @@ export class MusicPlayer {
         } else {
             player.classList.remove('minimized');
             // Test automatique de l'audio à l'ouverture
-            console.log('🎵 Lecteur ouvert - État audio:');
+            console.log('♫ Lecteur ouvert - État audio:');
             console.log('  - Source:', this.audio.src);
             console.log('  - Volume:', this.audio.volume);
             console.log('  - Muted:', this.audio.muted);
@@ -646,7 +646,7 @@ export class MusicPlayer {
     
     play() {
         // Vérifier l'état avant de jouer
-        console.log('🎵 Tentative de lecture...');
+        console.log('♫ Tentative de lecture...');
         console.log('  - Fichier:', this.audio.src);
         console.log('  - État prêt:', this.audio.readyState);
         console.log('  - Volume:', this.audio.volume);
@@ -717,7 +717,7 @@ export class MusicPlayer {
         this.audio.src = track.src;
         
         // Log pour debug
-        console.log('🎵 Chargement de:', track.title, 'depuis:', track.src);
+        console.log('♫ Chargement de:', track.title, 'depuis:', track.src);
         
         // Update UI
         document.getElementById('trackTitle').textContent = track.title;
