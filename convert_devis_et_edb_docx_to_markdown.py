@@ -30,7 +30,7 @@ from typing import List, Optional, Tuple
 import pandas as pd
 import mammoth
 import html2text
-import pymupdf4llm
+import pymupdf
 
 # Configuration du logging
 logging.basicConfig(
@@ -284,29 +284,100 @@ def docx_to_markdown(docx_path: Path) -> str:
 # ------------------------------
 # Conversion PDF -> Markdown
 # ------------------------------
+# Configuration PDF - marges pour ignorer headers/footers (en points, 72pt = 1 inch)
+PDF_MARGIN_TOP = 60      # Marge haute pour ignorer header
+PDF_MARGIN_BOTTOM = 50   # Marge basse pour ignorer footer/numéro de page
+PDF_MARGIN_LEFT = 36     # Marge gauche
+PDF_MARGIN_RIGHT = 36    # Marge droite
+
+
 def pdf_to_markdown(pdf_path: Path) -> str:
     """
     Convertit un fichier PDF en Markdown propre.
-    Utilise PyMuPDF4LLM pour une conversion optimisée pour les LLM.
+    Utilise PyMuPDF directement avec extraction par zone pour ignorer headers/footers.
     """
-    # Convertir avec pymupdf4llm
-    # margins=(top, right, bottom, left) en points (72 points = 1 inch)
-    # On utilise des marges pour ignorer les en-têtes et pieds de page
-    markdown = pymupdf4llm.to_markdown(
-        str(pdf_path),
-        show_progress=False,
-        page_chunks=False,  # Retourner tout le contenu d'un coup
-        margins=(50, 36, 50, 36),  # Marges pour ignorer headers/footers
-        ignore_images=True,  # Ignorer les images
-    )
+    import pymupdf
+
+    doc = pymupdf.open(str(pdf_path))
+    all_text = []
+
+    for page_num, page in enumerate(doc):
+        # Définir la zone de clip pour ignorer headers/footers
+        rect = page.rect
+        clip_rect = pymupdf.Rect(
+            PDF_MARGIN_LEFT,
+            PDF_MARGIN_TOP,
+            rect.width - PDF_MARGIN_RIGHT,
+            rect.height - PDF_MARGIN_BOTTOM
+        )
+
+        # Extraire le texte uniquement dans la zone de contenu
+        text = page.get_text("text", clip=clip_rect)
+
+        if text.strip():
+            all_text.append(text)
+
+    doc.close()
+
+    # Joindre toutes les pages
+    content = '\n\n'.join(all_text)
 
     # Post-traitement spécifique PDF
-    markdown = post_process_pdf(markdown)
+    content = post_process_pdf(content)
+
+    # Convertir en format Markdown (titres, listes, etc.)
+    content = convert_text_to_markdown(content)
 
     # Post-traitement commun
-    markdown = post_process_markdown(markdown)
+    content = post_process_markdown(content)
 
-    return markdown
+    return content
+
+
+def convert_text_to_markdown(content: str) -> str:
+    """
+    Convertit le texte brut extrait du PDF en Markdown.
+    Détecte les titres, listes, etc.
+    """
+    lines = content.split('\n')
+    result = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            result.append('')
+            continue
+
+        # Détecter les titres numérotés (1. Titre, 1.1. Sous-titre, etc.)
+        title_match = re.match(r'^(\d+\.(?:\d+\.)*)\s*(.+)$', stripped)
+        if title_match:
+            num = title_match.group(1)
+            title_text = title_match.group(2)
+            # Niveau basé sur le nombre de points
+            level = num.count('.')
+            if level == 1:
+                result.append(f'## {num} {title_text}')
+            elif level == 2:
+                result.append(f'### {num} {title_text}')
+            else:
+                result.append(f'#### {num} {title_text}')
+            continue
+
+        # Détecter les titres en majuscules seules (CONTEXTE, PÉRIMÈTRE, etc.)
+        if stripped.isupper() and len(stripped) > 3 and len(stripped) < 50 and not re.search(r'\d', stripped):
+            result.append(f'## {stripped.title()}')
+            continue
+
+        # Détecter les listes à puces
+        if stripped.startswith(('•', '-', '–', '▪', '●', '○')):
+            bullet_text = re.sub(r'^[•\-–▪●○]\s*', '', stripped)
+            result.append(f'- {bullet_text}')
+            continue
+
+        # Texte normal
+        result.append(stripped)
+
+    return '\n'.join(result)
 
 
 def post_process_pdf(content: str) -> str:
@@ -323,8 +394,6 @@ def post_process_pdf(content: str) -> str:
         r'^\s*\d+\s*/\s*\d+\s*$',
         r'^\s*Page\s+\d+\s*$',
         r'^\s*-\s*\d+\s*-\s*$',
-        # En-têtes répétés (lignes très courtes en majuscules répétées)
-        r'^[A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ\s]{3,50}$',
     ]
 
     # Détecter l'en-tête répété le plus fréquent
@@ -347,7 +416,7 @@ def post_process_pdf(content: str) -> str:
 
         # Ignorer les patterns de numéros de page
         skip = False
-        for pattern in skip_patterns[:3]:  # Seulement les patterns de numéros de page
+        for pattern in skip_patterns:
             if re.match(pattern, stripped, re.IGNORECASE):
                 skip = True
                 break
@@ -401,7 +470,51 @@ def find_content_start(lines: List[str]) -> int:
     """
     Trouve l'index de la première ligne du vrai contenu.
     Cherche après la table des matières.
+    Un vrai chapitre est un titre suivi de contenu textuel (pas juste d'autres titres).
     """
+
+    # Fonction pour vérifier si un titre est suivi de vrai contenu
+    def has_content_after(start_idx: int) -> bool:
+        """
+        Vérifie si après le titre il y a du contenu textuel (pas juste des titres).
+        Dans une TOC: ## 1. Titre suivi de ## 2. Autre (même niveau)
+        Dans le contenu: ## 1. Titre suivi de ### 1.1 Sous-titre (niveau inférieur) ou texte
+        """
+        current_line = lines[start_idx].strip()
+        current_level = current_line.count('#') if current_line.startswith('#') else 0
+
+        content_lines = 0
+
+        for j in range(start_idx + 1, min(start_idx + 20, len(lines))):
+            line = lines[j].strip()
+            if not line:
+                continue
+
+            # Si c'est un titre markdown
+            if line.startswith('#'):
+                line_level = line.count('#') if line.startswith('#') else 0
+                # Même niveau ou supérieur = probablement TOC
+                if line_level > 0 and line_level <= current_level:
+                    # C'est une entrée TOC au même niveau
+                    if content_lines == 0:
+                        return False
+                # Niveau inférieur (### après ##) = sous-section, c'est du contenu
+                continue
+
+            # Si c'est une numérotation seule (ex: "1. Contexte") sans #
+            if re.match(r'^\d+\.\d*\s+[A-Z]', line) and len(line) < 50:
+                # Pourrait être TOC ou sous-titre, continuer
+                continue
+
+            # Ligne de texte substantiel
+            if len(line) > 40:
+                content_lines += 1
+                if content_lines >= 1:
+                    return True
+
+        return content_lines >= 1
+
+    # Méthode 1: Chercher après un marqueur de TOC explicite
     toc_found = False
     toc_end_index = 0
 
@@ -416,27 +529,46 @@ def find_content_start(lines: List[str]) -> int:
                 break
 
     if toc_found:
-        # Chercher le premier vrai titre après la TOC
+        # Chercher le premier vrai titre après la TOC qui a du contenu
         for i in range(toc_end_index + 1, len(lines)):
             line = lines[i].strip()
 
-            # Ignorer les lignes vides et les lignes qui ressemblent à des entrées de TOC
             if not line:
                 continue
 
-            # Vérifier si c'est un vrai titre de chapitre
-            if is_chapter_heading(line):
+            # Vérifier si c'est un titre avec du vrai contenu après
+            if is_chapter_heading(line) and has_content_after(i):
                 return i
 
-            # Ignorer les lignes de TOC (titre + numéro de page)
-            if re.match(r'^[IVXLCDM\d]+\..*\d+\s*$', line):
-                continue
-            if re.match(r'^\*\*[IVXLCDM\d]+\.', line):
-                continue
+    # Méthode 2: Détecter la fin de la TOC en trouvant le premier titre avec contenu
+    # La TOC est une série de titres sans contenu entre eux
+    consecutive_titles = 0
+    last_title_idx = -1
 
-    # Si pas de TOC trouvée, chercher le premier titre de chapitre
     for i, line in enumerate(lines):
-        if is_chapter_heading(line.strip()):
+        line_stripped = line.strip()
+
+        if not line_stripped:
+            continue
+
+        is_title = line_stripped.startswith('#') or re.match(r'^\d+\.', line_stripped)
+
+        if is_title:
+            consecutive_titles += 1
+            last_title_idx = i
+        else:
+            # Si on a eu plusieurs titres consécutifs puis du contenu, c'était la TOC
+            if consecutive_titles >= 5:
+                # Chercher le premier titre avec contenu à partir d'ici
+                for j in range(last_title_idx, len(lines)):
+                    if lines[j].strip().startswith('#') and has_content_after(j):
+                        return j
+            consecutive_titles = 0
+
+    # Méthode 3: Fallback - chercher simplement le premier titre avec contenu
+    for i, line in enumerate(lines):
+        line_stripped = line.strip()
+        if is_chapter_heading(line_stripped) and has_content_after(i):
             return i
 
     return 0
