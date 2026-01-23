@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCRIBE AI - Générateur Intelligent de Notes de Cadrage</title>
+    
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    
+    <!-- Bibliothèques externes -->
+    <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-content">
+            <div class="loading-logo">🤖</div>
+            <h2>SCRIBE AI</h2>
+            <p>Chargement de votre assistant intelligent...</p>
+        </div>
+    </div>
+    
+    <!-- Menu Toggle (Mobile) -->
+    <button class="menu-toggle" id="menuToggle">☰</button>
+    
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar"></nav>
+        
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Actions Bar -->
+            <div class="actions-bar" id="actionsBar"></div>
+            
+            <!-- Content Area -->
+            <div class="content-area" id="contentArea"></div>
+        </div>
+    </div>
+    
+    <!-- Insights Button -->
+    <!-- button class="insights-button" id="insightsButton">📊</button-->
+    
+    <!-- Modals Container -->
+    <div id="modalsContainer"></div>
+
+    <!-- Disclaimer Modal -->
+    <div class="modal active" id="disclaimerModal">
+        <div class="modal-content modal-small" style="max-width: 500px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px 12px 0 0;">
+                <h3 style="display: flex; align-items: center; gap: 10px; color: white;">
+                    <span style="font-size: 1.5rem;">🚧</span>
+                    Avertissement
+                </h3>
+            </div>
+            <div class="modal-body" style="text-align: center; padding: 32px;">
+                <div style="font-size: 3rem; margin-bottom: 16px;">🤖</div>
+                <h4 style="margin: 0 0 16px 0; color: var(--primary-color);">Version Démonstrateur</h4>
+                <p style="margin: 0 0 16px 0; line-height: 1.6; color: var(--text-muted);">
+                    Cet outil est actuellement <strong>en cours de développement</strong>.
+                </p>
+                <p style="margin: 0 0 16px 0; line-height: 1.6; color: var(--text-muted);">
+                    Le modèle IA a été entraîné sur des <strong>données de projets fictifs</strong>
+                    à des fins de démonstration uniquement.
+                </p>
+                <div style="background: var(--background-color); border-radius: 8px; padding: 12px; margin-top: 16px;">
+                    <p style="margin: 0; font-size: 0.9rem; color: var(--text-muted);">
+                        ⚠️ Les contenus générés ne doivent pas être utilisés en production.
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content: center;">
+                <button class="btn btn-primary" id="disclaimerAccept" style="min-width: 150px; text-align: center; justify-content: center;">
+                    J'ai compris
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Disclaimer Script -->
+    <script>
+        (function() {
+            const modal = document.getElementById('disclaimerModal');
+            const acceptBtn = document.getElementById('disclaimerAccept');
+            const storageKey = 'scribe_disclaimer_accepted';
+
+            // Vérifier si déjà accepté
+            if (localStorage.getItem(storageKey) === 'true') {
+                modal.classList.remove('active');
+            }
+
+            // Gérer le clic sur "J'ai compris"
+            acceptBtn.addEventListener('click', function() {
+                localStorage.setItem(storageKey, 'true');
+                modal.classList.remove('active');
+            });
+        })();
+    </script>
+
+    <!-- Scripts -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
