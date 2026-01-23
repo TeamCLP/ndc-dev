@@ -65,10 +65,10 @@ COL_NDC = 6  # Colonne G = index 6
 # Exemple: (1, None) signifie "pas de filtre sur colonne B"
 
 EXCEL_FILTERS = [
-    (1, 1),       # Colonne B = 1        (mettre None pour désactiver)
-    (2, 1),       # Colonne C = 1        (mettre None pour désactiver)
+    (1, None),       # Colonne B = 1        (mettre None pour désactiver)
+    (2, None),       # Colonne C = 1        (mettre None pour désactiver)
     (3, "OUI"),   # Colonne D = "OUI"    (mettre None pour désactiver)
-    (4, "NON"),   # Colonne E = "NON"    (mettre None pour désactiver)
+    (4, None),   # Colonne E = "NON"    (mettre None pour désactiver)
 ]
 
 # Pour désactiver TOUS les filtres, décommentez la ligne suivante:
