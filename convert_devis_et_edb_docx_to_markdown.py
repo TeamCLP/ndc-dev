@@ -693,7 +693,25 @@ def load_targets_from_excel(excel_path: Path) -> Tuple[List[str], List[str]]:
     ndc = ndc_col[mask].dropna().astype(str).tolist()
 
     def clean(lst):
-        return [t.strip().strip('"').strip("'") for t in lst if t.strip()]
+        """
+        Nettoie la liste de chemins de fichiers.
+        Gère les cellules avec plusieurs fichiers séparés par des pipes (|) et/ou espaces.
+        """
+        result = []
+        for cell in lst:
+            cell = cell.strip()
+            if not cell:
+                continue
+
+            # Séparer par pipe d'abord
+            parts = cell.split('|')
+
+            for part in parts:
+                part = part.strip().strip('"').strip("'")
+                if part and part.lower() not in ('nan', 'none', ''):
+                    result.append(part)
+
+        return result
 
     # Log des filtres appliqués
     active_filters = [(col, val) for col, val in EXCEL_FILTERS if val is not None]
