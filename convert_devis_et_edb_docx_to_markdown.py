@@ -37,23 +37,44 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ------------------------------
-# Configuration
-# ------------------------------
+# ==============================================================================
+# CONFIGURATION - MODIFIEZ ICI
+# ==============================================================================
+
+# Fichier Excel source
 EXCEL_NAME = "couverture_EDB_NDC_par_RITM.xlsx"
 
-COL_B = 1
-COL_C = 2
-COL_D = 3
-COL_E = 4
-COL_F = 5  # EDB
-COL_G = 6  # NDC
+# Colonnes contenant les chemins des fichiers (index 0-based: A=0, B=1, etc.)
+COL_EDB = 5  # Colonne F = index 5
+COL_NDC = 6  # Colonne G = index 6
 
-FILTER_B_EQ = 1
-FILTER_C_EQ = 1
-FILTER_D_EQ = "OUI"
-FILTER_E_EQ = "NON"
+# ------------------------------
+# FILTRES EXCEL
+# ------------------------------
+# Chaque filtre est un tuple: (colonne_index, valeur_attendue)
+# - colonne_index: 0=A, 1=B, 2=C, 3=D, 4=E, etc.
+# - valeur_attendue: la valeur que doit avoir la cellule (ou None pour ignorer)
+#
+# Pour DÉSACTIVER un filtre: mettez None comme valeur
+# Pour RETIRER un filtre: supprimez la ligne ou commentez-la
+#
+# Exemple: (1, 1) signifie "colonne B doit égaler 1"
+# Exemple: (3, "OUI") signifie "colonne D doit égaler 'OUI'"
+# Exemple: (1, None) signifie "pas de filtre sur colonne B"
 
+EXCEL_FILTERS = [
+    (1, 1),       # Colonne B = 1        (mettre None pour désactiver)
+    (2, 1),       # Colonne C = 1        (mettre None pour désactiver)
+    (3, "OUI"),   # Colonne D = "OUI"    (mettre None pour désactiver)
+    (4, "NON"),   # Colonne E = "NON"    (mettre None pour désactiver)
+]
+
+# Pour désactiver TOUS les filtres, décommentez la ligne suivante:
+# EXCEL_FILTERS = []
+
+# ------------------------------
+# Dossiers de sortie
+# ------------------------------
 OUTPUT_DIRNAME = "dataset_markdown"
 LOG_DIRNAME = "_logs"
 SUBDIR_NDC = "ndc"
@@ -528,26 +549,45 @@ def final_cleanup(content: str) -> str:
 # Chargement Excel
 # ------------------------------
 def load_targets_from_excel(excel_path: Path) -> Tuple[List[str], List[str]]:
-    """Charge les fichiers à traiter depuis Excel."""
+    """Charge les fichiers à traiter depuis Excel en appliquant les filtres configurés."""
     df = pd.read_excel(excel_path, engine="openpyxl")
 
-    b = df.iloc[:, COL_B]
-    c = df.iloc[:, COL_C]
-    d = df.iloc[:, COL_D]
-    e = df.iloc[:, COL_E]
-    f = df.iloc[:, COL_F]
-    g = df.iloc[:, COL_G]
+    # Construire le masque de filtre dynamiquement
+    mask = pd.Series([True] * len(df))  # Commencer avec tout à True
 
-    d_norm = d.astype(str).str.strip().str.upper()
-    e_norm = e.astype(str).str.strip().str.upper()
+    for col_idx, expected_value in EXCEL_FILTERS:
+        if expected_value is None:
+            # Filtre désactivé, on skip
+            continue
 
-    mask = (b == FILTER_B_EQ) & (c == FILTER_C_EQ) & (d_norm == FILTER_D_EQ) & (e_norm == FILTER_E_EQ)
+        col_data = df.iloc[:, col_idx]
 
-    edb = f[mask].dropna().astype(str).tolist()
-    ndc = g[mask].dropna().astype(str).tolist()
+        # Pour les valeurs string, normaliser (strip + upper)
+        if isinstance(expected_value, str):
+            col_normalized = col_data.astype(str).str.strip().str.upper()
+            expected_normalized = expected_value.strip().upper()
+            mask = mask & (col_normalized == expected_normalized)
+        else:
+            # Pour les valeurs numériques
+            mask = mask & (col_data == expected_value)
+
+    # Extraire les colonnes EDB et NDC
+    edb_col = df.iloc[:, COL_EDB]
+    ndc_col = df.iloc[:, COL_NDC]
+
+    edb = edb_col[mask].dropna().astype(str).tolist()
+    ndc = ndc_col[mask].dropna().astype(str).tolist()
 
     def clean(lst):
         return [t.strip().strip('"').strip("'") for t in lst if t.strip()]
+
+    # Log des filtres appliqués
+    active_filters = [(col, val) for col, val in EXCEL_FILTERS if val is not None]
+    if active_filters:
+        filter_desc = ", ".join([f"col{col}={val}" for col, val in active_filters])
+        logger.info(f"Filtres appliqués: {filter_desc}")
+    else:
+        logger.info("Aucun filtre appliqué (tous les fichiers seront traités)")
 
     return clean(ndc), clean(edb)
 
