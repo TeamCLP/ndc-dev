@@ -290,16 +290,74 @@ def pdf_to_markdown(pdf_path: Path) -> str:
     Utilise PyMuPDF4LLM pour une conversion optimisée pour les LLM.
     """
     # Convertir avec pymupdf4llm
+    # margins=(top, right, bottom, left) en points (72 points = 1 inch)
+    # On utilise des marges pour ignorer les en-têtes et pieds de page
     markdown = pymupdf4llm.to_markdown(
         str(pdf_path),
         show_progress=False,
         page_chunks=False,  # Retourner tout le contenu d'un coup
+        margins=(50, 36, 50, 36),  # Marges pour ignorer headers/footers
+        ignore_images=True,  # Ignorer les images
     )
 
-    # Post-traitement (même que pour DOCX)
+    # Post-traitement spécifique PDF
+    markdown = post_process_pdf(markdown)
+
+    # Post-traitement commun
     markdown = post_process_markdown(markdown)
 
     return markdown
+
+
+def post_process_pdf(content: str) -> str:
+    """
+    Post-traitement spécifique pour les PDF.
+    Supprime les éléments typiques des PDF qui ne sont pas dans les DOCX.
+    """
+    lines = content.split('\n')
+    cleaned_lines = []
+
+    # Patterns à supprimer spécifiques aux PDF
+    skip_patterns = [
+        # Numéros de page (ex: "1 / 17", "2/17", "Page 1", etc.)
+        r'^\s*\d+\s*/\s*\d+\s*$',
+        r'^\s*Page\s+\d+\s*$',
+        r'^\s*-\s*\d+\s*-\s*$',
+        # En-têtes répétés (lignes très courtes en majuscules répétées)
+        r'^[A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ\s]{3,50}$',
+    ]
+
+    # Détecter l'en-tête répété le plus fréquent
+    header_candidates = {}
+    for line in lines:
+        stripped = line.strip()
+        # Lignes courtes en majuscules = potentiel header
+        if stripped and len(stripped) < 60 and stripped.isupper():
+            header_candidates[stripped] = header_candidates.get(stripped, 0) + 1
+
+    # Headers répétés = apparaissent plus de 3 fois
+    repeated_headers = {h for h, count in header_candidates.items() if count >= 3}
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Ignorer les headers répétés
+        if stripped in repeated_headers:
+            continue
+
+        # Ignorer les patterns de numéros de page
+        skip = False
+        for pattern in skip_patterns[:3]:  # Seulement les patterns de numéros de page
+            if re.match(pattern, stripped, re.IGNORECASE):
+                skip = True
+                break
+
+        if skip:
+            continue
+
+        cleaned_lines.append(line)
+
+    return '\n'.join(cleaned_lines)
 
 
 def post_process_markdown(content: str) -> str:
@@ -386,23 +444,56 @@ def find_content_start(lines: List[str]) -> int:
 
 def is_chapter_heading(line: str) -> bool:
     """
-    Vérifie si une ligne est un titre de chapitre.
-    Un titre Markdown H1/H2 qui ne finit PAS par un numéro de page.
+    Vérifie si une ligne est un titre de chapitre principal.
+    Un titre Markdown H1/H2/H3 qui est soit :
+    - Un titre connu (Description du projet, Périmètre, etc.)
+    - Un titre avec numérotation (romaine ou décimale) substantielle
     """
-    # Doit commencer par # ou ##
-    if not re.match(r'^#{1,2}\s+', line):
+    # Doit commencer par #, ## ou ### (H1, H2 ou H3)
+    match = re.match(r'^(#{1,3})\s+(.+)$', line)
+    if not match:
         return False
 
-    # Ne doit pas finir par un numéro (entrée de TOC)
-    if re.search(r'\s+\d+\s*$', line):
+    title_text = match.group(2).strip()
+
+    # Ne doit pas finir par un numéro seul (entrée de TOC avec numéro de page)
+    if re.search(r'\s+\d+\s*$', title_text):
         return False
 
-    # Ne doit pas être vide après le #
-    title_text = re.sub(r'^#{1,2}\s+', '', line).strip()
-    if not title_text or len(title_text) < 3:
+    # Supprimer le bold ** si présent
+    title_text = re.sub(r'^\*\*(.+)\*\*$', r'\1', title_text)
+
+    # Doit avoir du contenu substantiel
+    if not title_text or len(title_text) < 5:
         return False
 
-    return True
+    # Titres de chapitres connus (premier vrai chapitre après la TOC)
+    known_chapter_starts = [
+        r'^Description\s+du\s+projet',
+        r'^Introduction',
+        r'^Contexte\s+(?:du|et)',
+        r'^Pr[ée]sentation',
+        r'^Objectifs?\s+(?:du|et)',
+    ]
+
+    for pattern in known_chapter_starts:
+        if re.search(pattern, title_text, re.IGNORECASE):
+            return True
+
+    # Vérifier numérotation romaine ou décimale
+    # Ex: "II. I. Description du projet", "1. Contexte", "IV.1. Sous-titre"
+    has_numbering = re.match(
+        r'^[IVXLCDM]+\.?\s+[IVXLCDM]*\.?\s*\d*\.?\s*[A-ZÀ-Ý]',  # Numérotation romaine (II., III., etc.)
+        title_text
+    ) or re.match(
+        r'^\d+\.?\s+[A-ZÀ-Ý]',  # Numérotation décimale (1., 2., etc.)
+        title_text
+    )
+
+    # Ignorer les titres de section préliminaire (I.1, I.2, I.3, I.4 = avant le vrai contenu)
+    is_preliminary = re.match(r'^I\.\d+\.?\s+', title_text)
+
+    return has_numbering and not is_preliminary
 
 
 def clean_tables(content: str) -> str:
