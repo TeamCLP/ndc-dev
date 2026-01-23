@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Conversion DOC/DOCX -> Markdown (dataset pour training LLM)
+Conversion DOC/DOCX/PDF -> Markdown (dataset pour training LLM)
 - NDC (colonne G) + EDB (colonne F)
 - Filtre Excel : B=1, C=1, D=OUI, E=NON
-- Utilise Mammoth pour conversion propre (ignore headers/footers automatiquement)
+- Utilise Mammoth pour conversion DOCX (ignore headers/footers automatiquement)
+- Utilise PyMuPDF pour conversion PDF
 - Ignore page de garde, synthèse, table des matières
 - Préserve titres, paragraphes, listes, tableaux
 - Format Markdown homogène pour training
 
 Dépendances:
-  pip install pandas openpyxl mammoth html2text
+  pip install pandas openpyxl mammoth html2text pymupdf4llm
 Optionnel (pour .doc):
   pip install pywin32 ou avoir LibreOffice
 """
@@ -29,6 +30,7 @@ from typing import List, Optional, Tuple
 import pandas as pd
 import mammoth
 import html2text
+import pymupdf4llm
 
 # Configuration du logging
 logging.basicConfig(
@@ -274,6 +276,27 @@ def docx_to_markdown(docx_path: Path) -> str:
     markdown = h2t.handle(html_content)
 
     # Post-traitement
+    markdown = post_process_markdown(markdown)
+
+    return markdown
+
+
+# ------------------------------
+# Conversion PDF -> Markdown
+# ------------------------------
+def pdf_to_markdown(pdf_path: Path) -> str:
+    """
+    Convertit un fichier PDF en Markdown propre.
+    Utilise PyMuPDF4LLM pour une conversion optimisée pour les LLM.
+    """
+    # Convertir avec pymupdf4llm
+    markdown = pymupdf4llm.to_markdown(
+        str(pdf_path),
+        show_progress=False,
+        page_chunks=False,  # Retourner tout le contenu d'un coup
+    )
+
+    # Post-traitement (même que pour DOCX)
     markdown = post_process_markdown(markdown)
 
     return markdown
@@ -635,7 +658,7 @@ def main() -> int:
         out_dir = out_ndc if mode == "ndc" else out_edb
 
         if not src.exists():
-            for try_ext in [".docx", ".doc", ".DOCX", ".DOC"]:
+            for try_ext in [".docx", ".doc", ".DOCX", ".DOC", ".pdf", ".PDF"]:
                 alt = src.with_suffix(try_ext)
                 if alt.exists():
                     src = alt
@@ -648,7 +671,9 @@ def main() -> int:
             logger.warning(f"Introuvable: {src}")
             return
 
-        working_docx = src
+        working_file = src
+        is_pdf = ext == ".pdf"
+
         if ext == ".doc":
             converted = convert_doc_to_docx(src, tmp_conv)
             if not converted:
@@ -656,10 +681,14 @@ def main() -> int:
                 report_rows.append((mode, name, str(src), "", "CONVERT_ERROR", "Conversion .doc échouée"))
                 logger.error(f"Conversion échouée: {src.name}")
                 return
-            working_docx = converted
+            working_file = converted
 
         try:
-            md_content = docx_to_markdown(working_docx)
+            # Utiliser la bonne fonction selon le type de fichier
+            if is_pdf:
+                md_content = pdf_to_markdown(working_file)
+            else:
+                md_content = docx_to_markdown(working_file)
 
             out_name = Path(name).stem + ".md"
             out_path = out_dir / out_name
