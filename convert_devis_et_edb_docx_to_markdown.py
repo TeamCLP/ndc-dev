@@ -1,43 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Conversion DOC/DOCX -> Markdown (dataset)
+Conversion DOC/DOCX -> Markdown (dataset pour training LLM)
 - NDC (colonne G) + EDB (colonne F)
 - Filtre Excel : B=1, C=1, D=OUI, E=NON
-- Ignore images
-- Ignore page de garde / synthèse / tables des matières
-- Conserve titres, paragraphes, sauts de lignes, listes multi-niveaux
-- Tableaux en Markdown (format homogène pour training)
-- Déduplication conservative (doublons consécutifs)
-- Rapports CSV + logs d'erreurs
+- Utilise Mammoth pour conversion propre (ignore headers/footers automatiquement)
+- Ignore page de garde, synthèse, table des matières
+- Préserve titres, paragraphes, listes, tableaux
+- Format Markdown homogène pour training
 
 Dépendances:
-  pip install -U pandas openpyxl python-docx lxml
-Optionnel (pour lire .doc):
-  pip install pywin32 (si MS Word installé)
-  ou avoir LibreOffice accessible via 'soffice' dans le PATH
+  pip install pandas openpyxl mammoth html2text
+Optionnel (pour .doc):
+  pip install pywin32 ou avoir LibreOffice
 """
 
 from __future__ import annotations
 
 import re
 import os
-import html
 import shutil
 import subprocess
 import traceback
 import logging
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple, Union
-from enum import Enum, auto
+from typing import List, Optional, Tuple
 
 import pandas as pd
-from docx import Document
-from docx.text.paragraph import Paragraph
-from docx.table import Table
-from docx.oxml.ns import qn
-from lxml import etree
+import mammoth
+import html2text
 
 # Configuration du logging
 logging.basicConfig(
@@ -68,124 +59,74 @@ LOG_DIRNAME = "_logs"
 SUBDIR_NDC = "ndc"
 SUBDIR_EDB = "edb"
 
-# Namespace XML Word
-WORD_NS = {
-    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
-    "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
-    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-    "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
-}
+# Style mapping Mammoth : ignorer les styles de TOC et mapper les autres
+MAMMOTH_STYLE_MAP = """
+p[style-name='toc 1'] => !
+p[style-name='toc 2'] => !
+p[style-name='toc 3'] => !
+p[style-name='toc 4'] => !
+p[style-name='TM1'] => !
+p[style-name='TM2'] => !
+p[style-name='TM3'] => !
+p[style-name='TM4'] => !
+p[style-name='TOC Heading'] => !
+p[style-name='TOC 1'] => !
+p[style-name='TOC 2'] => !
+p[style-name='TOC 3'] => !
+p[style-name='Title'] => h1
+p[style-name='Titre'] => h1
+p[style-name='Heading 1'] => h1
+p[style-name='Heading 2'] => h2
+p[style-name='Heading 3'] => h3
+p[style-name='Heading 4'] => h4
+p[style-name='Titre 1'] => h1
+p[style-name='Titre 2'] => h2
+p[style-name='Titre 3'] => h3
+p[style-name='Titre 4'] => h4
+p[style-name='List Paragraph'] => p
+p[style-name='Paragraphedeliste'] => p
+p[style-name='No Spacing'] => p
+p[style-name='Body Text'] => p
+"""
 
-# Patterns pour identifier les sections à ignorer
-TOC_KEYWORDS = ["table des matières", "table des matieres", "sommaire", "table of contents"]
-SKIP_SECTION_KEYWORDS = ["synthèse", "synthese", "résumé", "resume", "abstract", "executive summary"]
+# Patterns pour détecter le début du vrai contenu
+# On cherche un titre de chapitre principal (I., II., 1., 2., ou connu)
+CHAPTER_START_PATTERNS = [
+    # Titres avec numérotation romaine
+    r'^#{1,2}\s+[IVXLCDM]+\.\s+',
+    r'^#{1,2}\s+[IVXLCDM]+\s+',
+    # Titres avec numérotation décimale
+    r'^#{1,2}\s+\d+\.\s+',
+    r'^#{1,2}\s+\d+\s+',
+    # Titres connus sans numérotation
+    r'^#\s+Description\s+du\s+projet',
+    r'^#\s+Introduction',
+    r'^#\s+Contexte',
+    r'^#\s+Périmètre',
+    r'^#\s+Perimetre',
+]
 
-# Titres connus (normalisés en minuscules sans ponctuation)
-KNOWN_SECTION_TITLES = {
-    # Niveau 1 - Sections principales NDC
-    "description du projet": 1,
-    "périmètre du projet": 1,
-    "perimetre du projet": 1,
-    "securité et réglementation": 1,
-    "sécurité et réglementation": 1,
-    "securite et reglementation": 1,
-    "contraintes et risques": 1,
-    "description technique de la solution": 1,
-    "démarche pour la mise en œuvre": 1,
-    "demarche pour la mise en oeuvre": 1,
-    "offre de service en fonctionnement": 1,
-    "evaluation financière": 1,
-    "évaluation financière": 1,
-    "evaluation financiere": 1,
-    "gestion de la documentation du projet": 1,
-    "rse impact co2": 1,
-    "introduction": 1,
-    "conclusion": 1,
-    "annexes": 1,
+# Patterns pour détecter la fin du préambule/TOC
+TOC_END_MARKERS = [
+    "Table des matières",
+    "Table des matieres",
+    "Sommaire",
+    "TABLE DES MATIÈRES",
+    "SOMMAIRE",
+]
 
-    # Niveau 2 - Sous-sections
-    "contexte": 2,
-    "le besoin exprimé": 2,
-    "le besoin exprime": 2,
-    "besoin exprimé": 2,
-    "besoin exprime": 2,
-    "objectifs du projet": 2,
-    "objectifs": 2,
-    "périmètre": 2,
-    "perimetre": 2,
-    "hors périmètre": 2,
-    "hors perimetre": 2,
-    "projet partenaire": 2,
-    "projet interne": 2,
-    "contrôle psee": 2,
-    "controle psee": 2,
-    "contraintes et prérequis": 2,
-    "contraintes et prerequis": 2,
-    "contraintes": 2,
-    "prérequis": 2,
-    "prerequis": 2,
-    "risques projet": 2,
-    "risques": 2,
-    "description de la solution": 2,
-    "architecture": 2,
-    "composants et dimensionnement": 2,
-    "dimensionnement": 2,
-    "lotissement": 2,
-    "livrables du projet": 2,
-    "livrables": 2,
-    "jalons clés du projet": 2,
-    "jalons cles du projet": 2,
-    "jalons": 2,
-    "macro planning": 2,
-    "macro-planning": 2,
-    "planning": 2,
-    "détails des contributions": 2,
-    "details des contributions": 2,
-    "contributions": 2,
-    "comitologie": 2,
-    "validation de la solution": 2,
-    "niveaux de service": 2,
-    "coûts du projet": 2,
-    "couts du projet": 2,
-    "coûts": 2,
-    "couts": 2,
-    "facturation": 2,
-    "coûts de fonctionnement": 2,
-    "couts de fonctionnement": 2,
-    "coûts de construction": 2,
-    "couts de construction": 2,
-}
-
-
-# ------------------------------
-# Classes utilitaires
-# ------------------------------
-class DocState(Enum):
-    """État de la machine d'état pour le parsing du document."""
-    PREAMBLE = auto()
-    TOC = auto()
-    SKIP_SECTION = auto()
-    BODY = auto()
-
-
-@dataclass
-class NumberingInfo:
-    """Information sur la numérotation d'un paragraphe."""
-    num_id: int
-    ilvl: int
-    num_format: str
-
-
-# ------------------------------
-# Fonction XPath corrigée
-# ------------------------------
-def lxml_xpath(element, expr: str) -> list:
-    """Execute XPath avec lxml et les namespaces Word."""
-    try:
-        return etree.XPath(expr, namespaces=WORD_NS)(element)
-    except Exception:
-        return []
+# Patterns pour nettoyer le contenu indésirable
+CLEANUP_PATTERNS = [
+    # Lignes de TOC avec numéros de page (ex: "I.1. Contexte 4")
+    (r'^[IVXLCDM]+(?:\.\d+)*\.?\s+.+?\s+\d+\s*$', '', re.MULTILINE),
+    (r'^\d+(?:\.\d+)*\.?\s+.+?\s+\d+\s*$', '', re.MULTILINE),
+    # Liens de TOC avec ancres
+    (r'\[([^\]]+)\]\(#[^)]+\)', r'\1', 0),
+    # Images en base64
+    (r'!\[.*?\]\(data:image[^)]+\)', '', 0),
+    # Lignes vides multiples
+    (r'\n{4,}', '\n\n\n', 0),
+]
 
 
 # ------------------------------
@@ -228,679 +169,366 @@ def convert_doc_to_docx(input_doc: Path, workdir: Path) -> Optional[Path]:
 
 
 # ------------------------------
-# Extraction de la numérotation
+# Conversion DOCX -> Markdown
 # ------------------------------
-class NumberingExtractor:
-    """Extrait les informations de numérotation du document Word."""
-
-    def __init__(self, doc: Document):
-        self.doc = doc
-        self.formats: Dict[Tuple[int, int], str] = {}
-        self._extract_numbering()
-
-    def _extract_numbering(self):
-        """Parse numbering.xml."""
-        try:
-            numbering_part = self.doc.part.numbering_part
-            if numbering_part is None:
-                return
-
-            numbering_xml = numbering_part.element
-            abstract_formats: Dict[str, Dict[str, str]] = {}
-
-            for abstract_num in lxml_xpath(numbering_xml, ".//w:abstractNum"):
-                abs_id = abstract_num.get(qn("w:abstractNumId"))
-                if not abs_id:
-                    continue
-
-                level_formats = {}
-                for lvl in lxml_xpath(abstract_num, "./w:lvl"):
-                    ilvl = lvl.get(qn("w:ilvl"))
-                    num_fmt_elem = lxml_xpath(lvl, "./w:numFmt/@w:val")
-                    if num_fmt_elem:
-                        level_formats[ilvl] = num_fmt_elem[0]
-
-                abstract_formats[abs_id] = level_formats
-
-            num_to_abstract: Dict[str, str] = {}
-            for num in lxml_xpath(numbering_xml, ".//w:num"):
-                num_id = num.get(qn("w:numId"))
-                abs_id_refs = lxml_xpath(num, "./w:abstractNumId/@w:val")
-                if num_id and abs_id_refs:
-                    num_to_abstract[num_id] = abs_id_refs[0]
-
-            for num_id, abs_id in num_to_abstract.items():
-                if abs_id in abstract_formats:
-                    for ilvl, fmt in abstract_formats[abs_id].items():
-                        self.formats[(int(num_id), int(ilvl))] = fmt
-
-        except Exception:
-            pass
-
-    def get_list_info(self, paragraph: Paragraph) -> Optional[NumberingInfo]:
-        """Retourne les infos de liste pour un paragraphe."""
-        p_elem = paragraph._p
-        pPr = p_elem.pPr
-        if pPr is None:
-            return None
-
-        numPr = pPr.numPr
-        if numPr is None:
-            style_name = (paragraph.style.name or "").lower() if paragraph.style else ""
-            if any(kw in style_name for kw in ["list", "puce", "bullet", "enum", "num"]):
-                is_bullet = any(kw in style_name for kw in ["puce", "bullet"])
-                return NumberingInfo(0, 0, "bullet" if is_bullet else "decimal")
-            return None
-
-        num_id_elem = lxml_xpath(numPr, "./w:numId/@w:val")
-        ilvl_elem = lxml_xpath(numPr, "./w:ilvl/@w:val")
-
-        if not num_id_elem:
-            return None
-
-        num_id = int(num_id_elem[0])
-        ilvl = int(ilvl_elem[0]) if ilvl_elem else 0
-        fmt = self.formats.get((num_id, ilvl), "decimal")
-
-        return NumberingInfo(num_id, ilvl, fmt)
-
-
-# ------------------------------
-# Extraction du texte
-# ------------------------------
-class TextExtractor:
-    """Extrait le texte des paragraphes Word."""
-
-    @staticmethod
-    def has_drawing(run_element) -> bool:
-        """Vérifie si un run contient une image."""
-        return bool(
-            lxml_xpath(run_element, ".//w:drawing") or
-            lxml_xpath(run_element, ".//w:pict") or
-            lxml_xpath(run_element, ".//pic:pic")
-        )
-
-    @staticmethod
-    def extract_paragraph_text(paragraph: Paragraph, include_formatting: bool = True) -> str:
-        """Extrait le texte d'un paragraphe."""
-        p_elem = paragraph._p
-        chunks: List[str] = []
-
-        for run in lxml_xpath(p_elem, ".//w:r"):
-            if TextExtractor.has_drawing(run):
-                continue
-
-            text_elements = lxml_xpath(run, ".//w:t")
-            text = "".join([(t.text or "") for t in text_elements])
-
-            if not text:
-                if lxml_xpath(run, ".//w:br"):
-                    chunks.append("\n")
-                continue
-
-            text = text.replace("\u00A0", " ").replace("\u200B", "")
-
-            if include_formatting:
-                is_bold = bool(lxml_xpath(run, "./w:rPr/w:b[not(@w:val='false') and not(@w:val='0')]"))
-                is_italic = bool(lxml_xpath(run, "./w:rPr/w:i[not(@w:val='false') and not(@w:val='0')]"))
-
-                if is_bold and is_italic:
-                    text = f"***{text}***"
-                elif is_bold:
-                    text = f"**{text}**"
-                elif is_italic:
-                    text = f"*{text}*"
-
-            chunks.append(text)
-
-        result = "".join(chunks).strip()
-        result = re.sub(r'\*{4,}', '**', result)
-        return result
-
-    @staticmethod
-    def extract_raw_text(paragraph: Paragraph) -> str:
-        """Extrait le texte brut sans formatage."""
-        return TextExtractor.extract_paragraph_text(paragraph, include_formatting=False)
-
-
-# ------------------------------
-# Détection des titres
-# ------------------------------
-class HeadingDetector:
-    """Détecte et classifie les titres."""
-
-    # Pattern numérotation romaine
-    ROMAN_PATTERN = re.compile(
-        r"^\s*([IVXLCDM]+)\.?\s*(\d+)?\.?\s*(.+)$",
-        re.IGNORECASE
+def clean_html_toc(html: str) -> str:
+    """
+    Supprime les éléments de TOC du HTML.
+    Les entrées de TOC sont des liens vers #_Toc...
+    """
+    # Supprimer les paragraphes contenant des liens TOC
+    # Pattern: <p>...<a href="#_Toc...">...</a>...</p>
+    html = re.sub(
+        r'<p[^>]*>\s*<a\s+href="#_Toc[^"]*"[^>]*>.*?</a>\s*</p>',
+        '',
+        html,
+        flags=re.DOTALL | re.IGNORECASE
     )
 
-    # Pattern numérotation décimale
-    DECIMAL_PATTERN = re.compile(
-        r"^\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?\.?\s+(.+)$"
+    # Supprimer les liens TOC restants (qui pourraient être dans d'autres éléments)
+    html = re.sub(
+        r'<a\s+href="#_Toc[^"]*"[^>]*>(.*?)</a>',
+        r'\1',
+        html,
+        flags=re.DOTALL | re.IGNORECASE
     )
 
-    @staticmethod
-    def normalize_title(text: str) -> str:
-        """Normalise un titre pour comparaison."""
-        text = text.lower().strip()
-        text = re.sub(r'[:\-–—.,;!?]+$', '', text)
-        text = re.sub(r'\s+', ' ', text)
-        return text.strip()
-
-    @staticmethod
-    def get_style_heading_level(paragraph: Paragraph) -> Optional[int]:
-        """Retourne le niveau de titre basé sur le style Word."""
-        if not paragraph.style:
-            return None
-
-        style_name = paragraph.style.name or ""
-        style_lower = style_name.lower()
-
-        match = re.match(r"^(heading|titre|title)\s*(\d+)", style_lower)
-        if match:
-            level = int(match.group(2))
-            return min(6, max(1, level))
-
-        p_elem = paragraph._p
-        pPr = p_elem.pPr
-        if pPr is not None:
-            outline_lvl = lxml_xpath(pPr, "./w:outlineLvl/@w:val")
-            if outline_lvl:
-                level = int(outline_lvl[0]) + 1
-                return min(6, max(1, level))
-
-        return None
-
-    @staticmethod
-    def get_pattern_heading_level(text: str) -> Optional[Tuple[int, str]]:
-        """Détecte un titre par pattern de numérotation."""
-        text = text.strip()
-        if not text or len(text) > 200:
-            return None
-
-        # Numérotation romaine: I. Titre, II.1. Titre, etc.
-        match = HeadingDetector.ROMAN_PATTERN.match(text)
-        if match:
-            roman = match.group(1).upper()
-            sub_num = match.group(2)
-            title = match.group(3).strip()
-
-            # Ignorer si ça ressemble à une ligne de TOC (finit par un numéro)
-            if re.search(r'\d+\s*$', title) and len(title) < 80:
-                return None
-
-            if sub_num:
-                return (2, text)
-            else:
-                return (1, text)
-
-        # Numérotation décimale: 1. Titre, 1.1 Titre, etc.
-        match = HeadingDetector.DECIMAL_PATTERN.match(text)
-        if match:
-            groups = [g for g in match.groups()[:-1] if g]
-            title = match.groups()[-1].strip()
-
-            if re.search(r'\d+\s*$', title) and len(title) < 80:
-                return None
-
-            level = len(groups)
-            return (min(6, level), text)
-
-        return None
-
-    @staticmethod
-    def get_known_title_level(text: str) -> Optional[int]:
-        """Retourne le niveau si c'est un titre connu."""
-        normalized = HeadingDetector.normalize_title(text)
-        return KNOWN_SECTION_TITLES.get(normalized)
-
-    @staticmethod
-    def detect_heading(paragraph: Paragraph, text: str) -> Optional[Tuple[int, str]]:
-        """Détecte si un paragraphe est un titre."""
-        if not text or not text.strip():
-            return None
-
-        text = text.strip()
-
-        # 1. Style Word
-        style_level = HeadingDetector.get_style_heading_level(paragraph)
-        if style_level is not None:
-            return (style_level, text)
-
-        # 2. Pattern de numérotation
-        pattern_result = HeadingDetector.get_pattern_heading_level(text)
-        if pattern_result:
-            return pattern_result
-
-        # 3. Titre connu
-        known_level = HeadingDetector.get_known_title_level(text)
-        if known_level is not None:
-            return (known_level, text)
-
-        return None
-
-
-# ------------------------------
-# Filtrage des sections
-# ------------------------------
-class SectionFilter:
-    """Filtre les sections à ignorer."""
-
-    @staticmethod
-    def is_toc_heading(text: str) -> bool:
-        """Vérifie si le texte est un titre de TOC."""
-        normalized = text.strip().lower()
-        return any(kw in normalized for kw in TOC_KEYWORDS)
-
-    @staticmethod
-    def is_skip_section_heading(text: str) -> bool:
-        """Vérifie si c'est une section à ignorer."""
-        normalized = text.strip().lower()
-        return any(kw in normalized for kw in SKIP_SECTION_KEYWORDS)
-
-    @staticmethod
-    def is_toc_line(text: str) -> bool:
-        """Vérifie si une ligne ressemble à une entrée de TOC."""
-        if not text or not text.strip():
-            return False
-
-        text = text.strip()
-
-        # Tabulation
-        if "\t" in text:
-            return True
-
-        # Points de suite
-        if "..." in text or "…" in text:
-            return True
-
-        # Ligne qui finit par un numéro de page (caractéristique TOC)
-        if re.search(r'\d+\s*$', text) and len(text) < 150:
-            # Vérifie si c'est une numérotation suivie d'un titre et d'un numéro de page
-            if re.match(r'^[IVXLCDM\d]+\.', text):
-                return True
-
-        return False
-
-    @staticmethod
-    def is_page_number_only(text: str) -> bool:
-        """Vérifie si le texte est juste un numéro de page."""
-        return bool(re.match(r'^\s*\d+\s*$', text.strip()))
-
-    @staticmethod
-    def looks_like_cover_page_element(text: str) -> bool:
-        """Vérifie si ça ressemble à un élément de page de garde."""
-        text_lower = text.strip().lower()
-
-        cover_patterns = [
-            r"^confidentiel",
-            r"^document\s+interne",
-            r"^usage\s+interne",
-            r"^version\s*:?\s*[\d\.]+",
-            r"^date\s*:?\s*\d",
-            r"^auteur\s*:",
-            r"^rédacteur\s*:",
-            r"^redacteur\s*:",
-            r"^statut\s*:",
-            r"^référence\s*:",
-            r"^reference\s*:",
-            r"^diffusion\s*:",
-            r"^\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}$",
+    # Nettoyer les H1 qui contiennent "Table des matières" fusionné avec autre chose
+    # Pattern: <h1>Table des matières...<a id="...">Vrai titre</h1>
+    # On garde seulement le vrai titre
+    def fix_toc_h1(match):
+        content = match.group(1)
+        # Chercher si "Table des matières" ou "Sommaire" est présent
+        toc_patterns = [
+            r'Table\s+des\s+mati[eè]res',
+            r'Sommaire',
+            r'TABLE\s+DES\s+MATI[EÈ]RES',
+            r'SOMMAIRE'
         ]
+        for pattern in toc_patterns:
+            if re.search(pattern, content, re.IGNORECASE):
+                # Supprimer la partie TOC et garder le reste après le dernier anchor
+                # On cherche le dernier <a id="..."></a> et on garde ce qui suit
+                parts = re.split(r'<a\s+id="[^"]*"[^>]*>\s*</a>', content)
+                if len(parts) > 1 and parts[-1].strip():
+                    return f'<h1>{parts[-1].strip()}</h1>'
+                # Sinon supprimer tout le H1
+                return ''
+        return match.group(0)
 
-        for pattern in cover_patterns:
-            if re.match(pattern, text_lower):
-                return True
+    html = re.sub(r'<h1[^>]*>(.*?)</h1>', fix_toc_h1, html, flags=re.DOTALL | re.IGNORECASE)
 
-        return False
+    # Supprimer les ancres id="_Toc..." qui restent
+    html = re.sub(r'<a\s+id="_Toc[^"]*"[^>]*>\s*</a>', '', html, flags=re.IGNORECASE)
 
-
-# ------------------------------
-# Conversion des tableaux (Markdown uniquement)
-# ------------------------------
-class TableConverter:
-    """Convertit les tableaux Word en Markdown."""
-
-    @staticmethod
-    def extract_cell_text(tc_element) -> str:
-        """Extrait le texte d'une cellule."""
-        paragraphs = lxml_xpath(tc_element, ".//w:p")
-        parts = []
-
-        for p in paragraphs:
-            text_parts = []
-            for run in lxml_xpath(p, ".//w:r"):
-                if lxml_xpath(run, ".//w:drawing") or lxml_xpath(run, ".//w:pict"):
-                    continue
-                texts = lxml_xpath(run, ".//w:t")
-                text_parts.append("".join([(t.text or "") for t in texts]))
-
-            para_text = "".join(text_parts).strip()
-            if para_text:
-                parts.append(para_text)
-
-        return " ".join(parts).replace("\u00A0", " ").replace("\n", " ").strip()
-
-    @staticmethod
-    def get_cell_colspan(tc_element) -> int:
-        """Retourne le colspan d'une cellule."""
-        grid_span = lxml_xpath(tc_element, "./w:tcPr/w:gridSpan/@w:val")
-        return int(grid_span[0]) if grid_span else 1
-
-    @staticmethod
-    def is_vmerge_continue(tc_element) -> bool:
-        """Vérifie si la cellule est une continuation de fusion verticale."""
-        vmerge = lxml_xpath(tc_element, "./w:tcPr/w:vMerge")
-        if vmerge:
-            vmerge_val = lxml_xpath(tc_element, "./w:tcPr/w:vMerge/@w:val")
-            if not vmerge_val or vmerge_val[0] != "restart":
-                return True
-        return False
-
-    @staticmethod
-    def table_to_markdown(table: Table) -> str:
-        """Convertit un tableau en Markdown."""
-        tbl_elem = table._tbl
-        rows = lxml_xpath(tbl_elem, "./w:tr")
-
-        if not rows:
-            return ""
-
-        md_rows = []
-        max_cols = 0
-
-        for row in rows:
-            cells = lxml_xpath(row, "./w:tc")
-            row_texts = []
-            col_count = 0
-
-            for cell in cells:
-                colspan = TableConverter.get_cell_colspan(cell)
-                is_continue = TableConverter.is_vmerge_continue(cell)
-
-                if is_continue:
-                    text = ""
-                else:
-                    text = TableConverter.extract_cell_text(cell)
-
-                # Escape le pipe pour Markdown
-                text = text.replace("|", "\\|")
-                row_texts.append(text)
-
-                # Ajouter des cellules vides pour colspan
-                for _ in range(colspan - 1):
-                    row_texts.append("")
-
-                col_count += colspan
-
-            max_cols = max(max_cols, col_count)
-            md_rows.append(row_texts)
-
-        # Normaliser les colonnes
-        for row in md_rows:
-            while len(row) < max_cols:
-                row.append("")
-
-        if not md_rows or max_cols == 0:
-            return ""
-
-        # Construire le Markdown
-        lines = []
-
-        # Header
-        header = "| " + " | ".join(md_rows[0]) + " |"
-        lines.append(header)
-
-        # Séparateur
-        sep = "| " + " | ".join(["---"] * max_cols) + " |"
-        lines.append(sep)
-
-        # Lignes de données
-        for row in md_rows[1:]:
-            line = "| " + " | ".join(row) + " |"
-            lines.append(line)
-
-        return "\n".join(lines)
-
-    @staticmethod
-    def contains_toc(table: Table) -> bool:
-        """Vérifie si le tableau contient une TOC."""
-        tbl_elem = table._tbl
-        for tc in lxml_xpath(tbl_elem, ".//w:tc"):
-            text = TableConverter.extract_cell_text(tc)
-            if SectionFilter.is_toc_heading(text):
-                return True
-        return False
+    return html
 
 
-# ------------------------------
-# Itération sur les blocs
-# ------------------------------
-def iter_document_blocks(doc: Document) -> Iterable[Union[Paragraph, Table]]:
-    """Itère sur les paragraphes et tableaux."""
-    body = doc.element.body
+def docx_to_markdown(docx_path: Path) -> str:
+    """
+    Convertit un fichier DOCX en Markdown propre.
+    Utilise Mammoth pour la conversion HTML puis html2text.
+    """
+    # Convertir avec Mammoth
+    with open(docx_path, 'rb') as f:
+        result = mammoth.convert_to_html(
+            f,
+            style_map=MAMMOTH_STYLE_MAP,
+            include_embedded_style_map=False,
+        )
+        html_content = result.value
 
-    for child in body.iterchildren():
-        tag = child.tag
+    # Nettoyer le HTML (supprimer TOC)
+    html_content = clean_html_toc(html_content)
 
-        if tag == qn("w:p"):
-            yield Paragraph(child, doc)
-        elif tag == qn("w:tbl"):
-            yield Table(child, doc)
+    # Convertir HTML en Markdown
+    h2t = html2text.HTML2Text()
+    h2t.ignore_links = False
+    h2t.ignore_images = True  # Ignorer les images
+    h2t.ignore_emphasis = False
+    h2t.body_width = 0  # Pas de wrap automatique
+    h2t.unicode_snob = True
+    h2t.skip_internal_links = True  # Ignorer les liens internes (#...)
+
+    markdown = h2t.handle(html_content)
+
+    # Post-traitement
+    markdown = post_process_markdown(markdown)
+
+    return markdown
 
 
-# ------------------------------
-# Convertisseur principal
-# ------------------------------
-class DocxToMarkdownConverter:
-    """Convertisseur DOCX vers Markdown."""
+def post_process_markdown(content: str) -> str:
+    """
+    Post-traite le Markdown pour :
+    - Supprimer le préambule (page de garde, synthèse, etc.)
+    - Supprimer la table des matières
+    - Nettoyer le formatage
+    """
+    lines = content.split('\n')
 
-    def __init__(self, docx_path: Path, mode: str = "ndc"):
-        self.docx_path = docx_path
-        self.mode = mode
-        self.doc = Document(str(docx_path))
-        self.numbering = NumberingExtractor(self.doc)
+    # Étape 1: Trouver le début du vrai contenu
+    start_index = find_content_start(lines)
 
-        self.state = DocState.PREAMBLE
-        self.md_lines: List[str] = []
-        self.in_list = False
-        self.preamble_line_count = 0
-        self.body_started = False
+    # Garder uniquement le contenu principal
+    if start_index > 0:
+        lines = lines[start_index:]
 
-    def convert(self) -> str:
-        """Effectue la conversion."""
-        for block in iter_document_blocks(self.doc):
-            self._process_block(block)
+    content = '\n'.join(lines)
 
-        return self._finalize()
-
-    def _process_block(self, block: Union[Paragraph, Table]):
-        """Traite un bloc."""
-        if isinstance(block, Table):
-            self._process_table(block)
+    # Étape 2: Appliquer les patterns de nettoyage
+    for pattern, replacement, flags in CLEANUP_PATTERNS:
+        if flags:
+            content = re.sub(pattern, replacement, content, flags=flags)
         else:
-            self._process_paragraph(block)
+            content = re.sub(pattern, replacement, content)
 
-    def _process_table(self, table: Table):
-        """Traite un tableau."""
-        if TableConverter.contains_toc(table):
-            self.state = DocState.TOC
-            return
+    # Étape 3: Nettoyer les tableaux
+    content = clean_tables(content)
 
-        if self.state != DocState.BODY:
-            return
+    # Étape 4: Normaliser les titres
+    content = normalize_headings(content)
 
-        self._close_list()
+    # Étape 5: Nettoyage final
+    content = final_cleanup(content)
 
-        table_md = TableConverter.table_to_markdown(table)
-        if table_md:
-            self.md_lines.append("")
-            self.md_lines.append(table_md)
-            self.md_lines.append("")
+    return content
 
-    def _process_paragraph(self, paragraph: Paragraph):
-        """Traite un paragraphe."""
-        text = TextExtractor.extract_paragraph_text(paragraph)
-        raw_text = TextExtractor.extract_raw_text(paragraph)
 
-        if not raw_text.strip():
-            if self.state == DocState.BODY:
-                self._close_list()
-                self.md_lines.append("")
-            return
+def find_content_start(lines: List[str]) -> int:
+    """
+    Trouve l'index de la première ligne du vrai contenu.
+    Cherche après la table des matières.
+    """
+    toc_found = False
+    toc_end_index = 0
 
-        if self.state == DocState.PREAMBLE:
-            self._handle_preamble(paragraph, text, raw_text)
-        elif self.state == DocState.TOC:
-            self._handle_toc(paragraph, text, raw_text)
-        elif self.state == DocState.SKIP_SECTION:
-            self._handle_skip_section(paragraph, text, raw_text)
-        else:
-            self._handle_body(paragraph, text, raw_text)
+    for i, line in enumerate(lines):
+        line_stripped = line.strip()
 
-    def _handle_preamble(self, paragraph: Paragraph, text: str, raw_text: str):
-        """Gère le préambule."""
-        self.preamble_line_count += 1
+        # Détecter la table des matières
+        for marker in TOC_END_MARKERS:
+            if marker.lower() in line_stripped.lower():
+                toc_found = True
+                toc_end_index = i
+                break
 
-        if SectionFilter.is_toc_heading(raw_text):
-            self.state = DocState.TOC
-            return
+    if toc_found:
+        # Chercher le premier vrai titre après la TOC
+        for i in range(toc_end_index + 1, len(lines)):
+            line = lines[i].strip()
 
-        if SectionFilter.is_skip_section_heading(raw_text):
-            self.state = DocState.SKIP_SECTION
-            return
-
-        heading = HeadingDetector.detect_heading(paragraph, raw_text)
-        if heading:
-            level, title = heading
-            if level <= 2 and not SectionFilter.looks_like_cover_page_element(title):
-                if not SectionFilter.is_toc_line(raw_text):
-                    self.state = DocState.BODY
-                    self.body_started = True
-                    self._add_heading(level, text)
-                    return
-
-        if self.preamble_line_count > 100:
-            if len(raw_text) > 50 and not SectionFilter.looks_like_cover_page_element(raw_text):
-                self.state = DocState.BODY
-                self.body_started = True
-                self._handle_body(paragraph, text, raw_text)
-
-    def _handle_toc(self, paragraph: Paragraph, text: str, raw_text: str):
-        """Gère la TOC."""
-        if SectionFilter.is_toc_line(raw_text):
-            return
-
-        if SectionFilter.is_page_number_only(raw_text):
-            return
-
-        heading = HeadingDetector.detect_heading(paragraph, raw_text)
-        if heading:
-            level, title = heading
-            if not SectionFilter.is_toc_heading(raw_text):
-                if not SectionFilter.is_toc_line(raw_text):
-                    self.state = DocState.BODY
-                    self.body_started = True
-                    self._add_heading(level, text)
-                    return
-
-        if len(raw_text) > 80 and not SectionFilter.is_toc_line(raw_text):
-            self.state = DocState.BODY
-            self.body_started = True
-            self._handle_body(paragraph, text, raw_text)
-
-    def _handle_skip_section(self, paragraph: Paragraph, text: str, raw_text: str):
-        """Gère une section à ignorer."""
-        heading = HeadingDetector.detect_heading(paragraph, raw_text)
-        if heading:
-            level, title = heading
-            if level == 1 and not SectionFilter.is_skip_section_heading(raw_text):
-                self.state = DocState.BODY
-                self.body_started = True
-                self._add_heading(level, text)
-                return
-
-        if SectionFilter.is_toc_heading(raw_text):
-            self.state = DocState.TOC
-
-    def _handle_body(self, paragraph: Paragraph, text: str, raw_text: str):
-        """Gère le contenu principal."""
-        if SectionFilter.looks_like_cover_page_element(raw_text) and self.preamble_line_count < 10:
-            return
-
-        self.body_started = True
-
-        if SectionFilter.is_skip_section_heading(raw_text):
-            self.state = DocState.SKIP_SECTION
-            return
-
-        heading = HeadingDetector.detect_heading(paragraph, raw_text)
-        if heading:
-            self._close_list()
-            level, title = heading
-            self._add_heading(level, text)
-            return
-
-        list_info = self.numbering.get_list_info(paragraph)
-        if list_info:
-            self._add_list_item(list_info, text)
-            return
-
-        self._close_list()
-        self.md_lines.append(text)
-        self.md_lines.append("")
-
-    def _add_heading(self, level: int, text: str):
-        """Ajoute un titre."""
-        self.md_lines.append("")
-        prefix = "#" * level
-        self.md_lines.append(f"{prefix} {text}")
-        self.md_lines.append("")
-
-    def _add_list_item(self, list_info: NumberingInfo, text: str):
-        """Ajoute un élément de liste."""
-        if not self.in_list:
-            self.md_lines.append("")
-            self.in_list = True
-
-        indent = "  " * list_info.ilvl
-        marker = "-" if list_info.num_format == "bullet" else "1."
-        self.md_lines.append(f"{indent}{marker} {text}")
-
-    def _close_list(self):
-        """Ferme une liste."""
-        if self.in_list:
-            self.md_lines.append("")
-            self.in_list = False
-
-    def _finalize(self) -> str:
-        """Finalise le Markdown."""
-        self._close_list()
-
-        # Dédupliquer
-        deduped = []
-        prev_key = None
-        for line in self.md_lines:
-            key = re.sub(r'\s+', ' ', line.strip())
-            if key and key == prev_key:
+            # Ignorer les lignes vides et les lignes qui ressemblent à des entrées de TOC
+            if not line:
                 continue
-            deduped.append(line)
-            prev_key = key if key else prev_key
 
-        result = "\n".join(deduped)
-        result = re.sub(r'\n{4,}', '\n\n\n', result)
-        result = result.lstrip('\n')
-        result = result.rstrip() + '\n'
+            # Vérifier si c'est un vrai titre de chapitre
+            if is_chapter_heading(line):
+                return i
 
-        return result
+            # Ignorer les lignes de TOC (titre + numéro de page)
+            if re.match(r'^[IVXLCDM\d]+\..*\d+\s*$', line):
+                continue
+            if re.match(r'^\*\*[IVXLCDM\d]+\.', line):
+                continue
+
+    # Si pas de TOC trouvée, chercher le premier titre de chapitre
+    for i, line in enumerate(lines):
+        if is_chapter_heading(line.strip()):
+            return i
+
+    return 0
+
+
+def is_chapter_heading(line: str) -> bool:
+    """
+    Vérifie si une ligne est un titre de chapitre.
+    Un titre Markdown H1/H2 qui ne finit PAS par un numéro de page.
+    """
+    # Doit commencer par # ou ##
+    if not re.match(r'^#{1,2}\s+', line):
+        return False
+
+    # Ne doit pas finir par un numéro (entrée de TOC)
+    if re.search(r'\s+\d+\s*$', line):
+        return False
+
+    # Ne doit pas être vide après le #
+    title_text = re.sub(r'^#{1,2}\s+', '', line).strip()
+    if not title_text or len(title_text) < 3:
+        return False
+
+    return True
+
+
+def clean_tables(content: str) -> str:
+    """Nettoie et normalise les tableaux Markdown."""
+    lines = content.split('\n')
+    result = []
+    in_table = False
+    table_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Détecter un tableau (format html2text: "cell| cell" ou "---|---")
+        is_table_line = False
+        if '|' in stripped:
+            # Ligne de tableau si elle contient | et n'est pas un titre Markdown
+            if not stripped.startswith('#'):
+                # Vérifier si c'est une ligne de séparateur ou de données
+                if re.match(r'^[-|\s:]+$', stripped) or '|' in stripped:
+                    is_table_line = True
+
+        if is_table_line:
+            if not in_table:
+                in_table = True
+                table_lines = []
+            table_lines.append(line)
+        else:
+            if in_table:
+                # Fin du tableau, le traiter
+                processed_table = process_table(table_lines)
+                result.extend(processed_table)
+                result.append('')  # Ligne vide après le tableau
+                in_table = False
+                table_lines = []
+
+            result.append(line)
+
+    # Si on finit dans un tableau
+    if in_table and table_lines:
+        processed_table = process_table(table_lines)
+        result.extend(processed_table)
+
+    return '\n'.join(result)
+
+
+def process_table(table_lines: List[str]) -> List[str]:
+    """
+    Traite un tableau pour le normaliser au format Markdown standard.
+    Gère le format html2text (cell| cell) et le format standard (| cell | cell |)
+    """
+    if not table_lines:
+        return []
+
+    # Parser les lignes du tableau
+    rows = []
+    separator_idx = -1
+
+    for i, line in enumerate(table_lines):
+        line = line.strip()
+        if not line:
+            continue
+
+        # Vérifier si c'est un séparateur (---|---)
+        if re.match(r'^[-|\s:]+$', line) and '-' in line:
+            separator_idx = len(rows)
+            continue
+
+        # Extraire les cellules
+        # Format: "cell| cell" ou "| cell | cell |"
+        if line.startswith('|'):
+            line = line[1:]
+        if line.endswith('|'):
+            line = line[:-1]
+
+        cells = [c.strip() for c in line.split('|')]
+        if cells:
+            rows.append(cells)
+
+    if not rows:
+        return []
+
+    # Trouver le nombre max de colonnes
+    max_cols = max(len(row) for row in rows)
+
+    if max_cols == 0:
+        return []
+
+    # Normaliser toutes les lignes au même nombre de colonnes
+    for row in rows:
+        while len(row) < max_cols:
+            row.append('')
+
+    # Construire le tableau final
+    result = []
+
+    # Header (première ligne)
+    header = '| ' + ' | '.join(rows[0]) + ' |'
+    result.append(header)
+
+    # Séparateur
+    separator = '| ' + ' | '.join(['---'] * max_cols) + ' |'
+    result.append(separator)
+
+    # Lignes de données (à partir de la 2ème ligne)
+    for row in rows[1:]:
+        line = '| ' + ' | '.join(row) + ' |'
+        result.append(line)
+
+    return result
+
+
+def normalize_headings(content: str) -> str:
+    """
+    Normalise les titres :
+    - Assure un format cohérent
+    - Corrige les niveaux si nécessaire
+    """
+    lines = content.split('\n')
+    result = []
+
+    for line in lines:
+        # Détecter les titres
+        match = re.match(r'^(#{1,6})\s+(.+)$', line)
+        if match:
+            level = len(match.group(1))
+            title_text = match.group(2).strip()
+
+            # Nettoyer le texte du titre
+            # Enlever les ** au début/fin
+            title_text = re.sub(r'^\*\*(.+)\*\*$', r'\1', title_text)
+
+            # Reconstruire le titre
+            line = '#' * level + ' ' + title_text
+
+        result.append(line)
+
+    return '\n'.join(result)
+
+
+def final_cleanup(content: str) -> str:
+    """Nettoyage final du contenu."""
+    # Supprimer les lignes vides multiples
+    content = re.sub(r'\n{3,}', '\n\n', content)
+
+    # Supprimer les espaces en fin de ligne
+    content = re.sub(r' +$', '', content, flags=re.MULTILINE)
+
+    # Supprimer le contenu vide au début
+    content = content.lstrip('\n')
+
+    # Assurer une ligne vide à la fin
+    content = content.rstrip() + '\n'
+
+    # Supprimer les lignes qui ne contiennent que des caractères spéciaux
+    lines = content.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        # Ignorer les lignes qui ne sont que des tirets, underscores, etc.
+        if re.match(r'^[-_=\s|]+$', line) and '|' not in line:
+            continue
+        cleaned_lines.append(line)
+
+    return '\n'.join(cleaned_lines)
 
 
 # ------------------------------
 # Chargement Excel
 # ------------------------------
 def load_targets_from_excel(excel_path: Path) -> Tuple[List[str], List[str]]:
-    """Charge les fichiers à traiter."""
+    """Charge les fichiers à traiter depuis Excel."""
     df = pd.read_excel(excel_path, engine="openpyxl")
 
     b = df.iloc[:, COL_B]
@@ -991,8 +619,7 @@ def main() -> int:
             working_docx = converted
 
         try:
-            converter = DocxToMarkdownConverter(working_docx, mode=mode)
-            md_content = converter.convert()
+            md_content = docx_to_markdown(working_docx)
 
             out_name = Path(name).stem + ".md"
             out_path = out_dir / out_name
