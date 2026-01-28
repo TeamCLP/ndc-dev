@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCRIBE AI - Documentation Pipeline de Données</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --primary-light: #6366F1;
+            --success: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --info: #3B82F6;
+            --gray-50: #F9FAFB;
+            --gray-100: #F3F4F6;
+            --gray-200: #E5E7EB;
+            --gray-300: #D1D5DB;
+            --gray-500: #6B7280;
+            --gray-700: #374151;
+            --gray-900: #111827;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
+            color: var(--gray-900);
+            background: var(--gray-50);
+            padding: 2rem;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2rem;
+            background: linear-gradient(135deg, var(--primary), #7C3AED);
+            color: white;
+            border-radius: 16px;
+        }
+        
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+        
+        .repo-link {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.5rem 1rem;
+            background: rgba(255,255,255,0.2);
+            border-radius: 8px;
+            color: white;
+            text-decoration: none;
+        }
+        
+        .repo-link:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        section {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        h2 {
+            color: var(--primary);
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--gray-200);
+        }
+        
+        h3 {
+            color: var(--gray-700);
+            margin: 1.5rem 0 1rem;
+        }
+        
+        h4 {
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .mermaid {
+            background: var(--gray-50);
+            padding: 2rem;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--gray-200);
+        }
+        
+        th {
+            background: var(--gray-100);
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: var(--gray-50);
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        
+        .status-ok {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .status-pending {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+        
+        .status-missing {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+        
+        code {
+            background: var(--gray-100);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9rem;
+        }
+        
+        pre {
+            background: var(--gray-900);
+            color: #E5E7EB;
+            padding: 1.5rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+        
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .card {
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+        
+        .card h4 {
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .card.v1 {
+            border-left: 4px solid var(--info);
+        }
+        
+        .card.v2 {
+            border-left: 4px solid var(--success);
+        }
+        
+        .card .step-num {
+            display: inline-block;
+            width: 28px;
+            height: 28px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 28px;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+        
+        .version-badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 0.5rem;
+        }
+        
+        .version-badge.v1 {
+            background: #DBEAFE;
+            color: #1E40AF;
+        }
+        
+        .version-badge.v2 {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .comparison-table {
+            margin: 1.5rem 0;
+        }
+        
+        .comparison-table th:first-child {
+            width: 30%;
+        }
+        
+        .comparison-table .highlight-v1 {
+            background: #EFF6FF;
+        }
+        
+        .comparison-table .highlight-v2 {
+            background: #ECFDF5;
+        }
+        
+        .pipeline-arrow {
+            text-align: center;
+            padding: 1rem;
+            color: var(--gray-400);
+            font-size: 2rem;
+        }
+        
+        .file-box {
+            display: inline-block;
+            background: #DBEAFE;
+            color: #1E40AF;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            margin: 0.2rem;
+        }
+        
+        .output-box {
+            display: inline-block;
+            background: #D1FAE5;
+            color: #065F46;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            margin: 0.2rem;
+        }
+        
+        .warning-box {
+            background: #FEF3C7;
+            border: 1px solid #F59E0B;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .warning-box h5 {
+            color: #92400E;
+            margin-bottom: 0.5rem;
+        }
+        
+        .info-box {
+            background: #EFF6FF;
+            border: 1px solid #3B82F6;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .info-box h5 {
+            color: #1E40AF;
+            margin-bottom: 0.5rem;
+        }
+        
+        .todo-list {
+            list-style: none;
+        }
+        
+        .todo-list li {
+            padding: 0.5rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .todo-list li::before {
+            content: "☐";
+            color: var(--gray-400);
+        }
+        
+        .todo-list li.done::before {
+            content: "☑";
+            color: var(--success);
+        }
+        
+        .toc {
+            background: var(--gray-100);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .toc h3 {
+            margin-top: 0;
+            margin-bottom: 1rem;
+        }
+        
+        .toc ul {
+            list-style: none;
+            columns: 2;
+        }
+        
+        .toc li {
+            padding: 0.3rem 0;
+        }
+        
+        .toc a {
+            color: var(--gray-700);
+            text-decoration: none;
+        }
+        
+        .toc a:hover {
+            color: var(--primary);
+        }
+        
+        @media (max-width: 900px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+            .toc ul {
+                columns: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🖊️ SCRIBE AI</h1>
+            <p>Générateur Intelligent de Notes de Cadrage</p>
+            <p><strong>Documentation du Pipeline de Données</strong></p>
+            <p style="opacity: 0.8; font-size: 0.9rem;">De la collecte des données à l'entraînement du modèle</p>
+            <a href="https://github.com/TeamCLP/ndc-dev" class="repo-link">📁 github.com/TeamCLP/ndc-dev</a>
+        </header>
+
+        <!-- TABLE DES MATIÈRES -->
+        <nav class="toc">
+            <h3>📑 Table des matières</h3>
+            <ul>
+                <li><a href="#overview">1. Vue d'ensemble</a></li>
+                <li><a href="#pipeline">2. Schéma du Pipeline</a></li>
+                <li><a href="#inventory">3. Inventaire des Programmes</a></li>
+                <li><a href="#step1-collect">4. Étape 1 - Collecte</a></li>
+                <li><a href="#step2-classify">5. Étape 2 - Classification</a></li>
+                <li><a href="#step3-clean">6. Étape 3 - Nettoyage</a></li>
+                <li><a href="#step4-match">7. Étape 4 - Appariement</a></li>
+                <li><a href="#step5-convert">8. Étape 5 - Conversion</a></li>
+                <li><a href="#step6-dataset">9. Étape 6 - Préparation Dataset</a></li>
+                <li><a href="#step7-train">10. Étape 7 - Entraînement</a></li>
+                <li><a href="#train-comparison">11. Comparaison train.py vs train2.py</a></li>
+                <li><a href="#structure">12. Structure du Repository</a></li>
+            </ul>
+        </nav>
+
+        <!-- VUE D'ENSEMBLE -->
+        <section id="overview">
+            <h2>📋 1. Vue d'ensemble</h2>
+            <p><strong>SCRIBE AI</strong> automatise la génération de Notes de Cadrage (NDC) à partir d'Expressions de Besoins (EDB) en utilisant un modèle <strong>Mistral 7B fine-tuné</strong> sur des données historiques internes du domaine bancaire.</p>
+            
+            <div class="info-box">
+                <h5>🎯 Objectif du pipeline</h5>
+                <p>Transformer des documents bruts (PDF/Word) en un dataset d'entraînement structuré pour fine-tuner un LLM capable de générer automatiquement des documents de cadrage projet.</p>
+            </div>
+
+            <h3>Deux approches d'entraînement</h3>
+            <div class="grid-2">
+                <div class="card v1">
+                    <h4>train.py <span class="version-badge v1">V1 - Champs</span></h4>
+                    <p><strong>Génération par champs individuels</strong></p>
+                    <p>Le modèle génère des sections spécifiques de la NDC (contexte, objectifs, risques, etc.) avec des balises <code>&lt;START&gt;</code> / <code>&lt;END&gt;</code>.</p>
+                    <p><em>Idéal pour : Interface interactive, génération à la demande</em></p>
+                </div>
+                <div class="card v2">
+                    <h4>train2.py <span class="version-badge v2">V2 - Documents</span></h4>
+                    <p><strong>Génération de documents complets</strong></p>
+                    <p>Le modèle génère un devis/NDC complet en Markdown à partir d'une expression de besoin complète.</p>
+                    <p><em>Idéal pour : Génération batch, documents autonomes</em></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCHÉMA DU PIPELINE -->
+        <section id="pipeline">
+            <h2>🗺️ 2. Schéma du Pipeline</h2>
+            
+            <h3>Vue simplifiée</h3>
+            <div class="mermaid">
+flowchart LR
+    subgraph DATA["📥 COLLECTE"]
+        A1[Extraction SQL] --> A2[Téléchargement]
+    end
+    
+    subgraph PREP["🔧 PRÉPARATION"]
+        B1[Classification] --> B2[Nettoyage]
+        B2 --> B3[Appariement]
+    end
+    
+    subgraph CONVERT["📝 CONVERSION"]
+        C1[DOCX → Markdown]
+    end
+    
+    subgraph TRAIN["🧠 ENTRAÎNEMENT"]
+        D1[Dataset JSONL] --> D2[Fine-tuning]
+    end
+    
+    DATA --> PREP --> CONVERT --> TRAIN
+    
+    style DATA fill:#e1f5fe
+    style PREP fill:#fff3e0
+    style CONVERT fill:#e8f5e9
+    style TRAIN fill:#e3f2fd
+            </div>
+
+            <h3>Vue détaillée</h3>
+            <div class="mermaid">
+flowchart TD
+    subgraph COLLECTE["1. COLLECTE DES DONNÉES"]
+        A1[("🗄️ Base de données<br/>interne")] -->|Extraction SQL| A2["📁 Fichiers bruts<br/>PDF + Word"]
+    end
+
+    subgraph CLASSIFICATION["2. CLASSIFICATION & TRI"]
+        B1["📁 Fichiers bruts"] -->|"Scoring automatique<br/>(mots-clés, structure)"| B2{"🏷️ Classification"}
+        B2 -->|Score EDB| B3["📄 Expression de Besoins"]
+        B2 -->|Score NDC| B4["📄 Note de Cadrage"]
+        B2 -->|Score faible| B5["🗑️ AUTRE<br/>(supprimé)"]
+    end
+
+    subgraph NETTOYAGE["3. NETTOYAGE & DÉDUPLICATION"]
+        direction TB
+        C1["📁 Fichiers classifiés"] --> C2["🗑️ Suppression AUTRE"]
+        C2 --> C3["🔄 Déduplication<br/>PDF supprimé si Word existe"]
+        C3 --> C4["✏️ Renommage<br/>RITM-TYPE-nom.ext"]
+        C4 --> C5["📁 Dossier clean2/"]
+    end
+
+    subgraph APPARIEMENT["4. APPARIEMENT EDB-NDC"]
+        D1["📄 EDB nettoyées"] --> D2["🔗 Matching par<br/>référence RITM"]
+        D3["📄 NDC nettoyées"] --> D2
+        D2 --> D4["👥 Couples EDB-NDC<br/>appariés"]
+        D2 --> D5["📊 Rapport couverture"]
+    end
+
+    subgraph CONVERSION["5. CONVERSION MARKDOWN"]
+        E1["👥 Couples EDB-NDC"] --> E2["🔄 Docling<br/>DOCX → Markdown"]
+        E2 --> E3["📝 Fichiers .md"]
+    end
+
+    subgraph PREPARATION["6. PRÉPARATION DATASET"]
+        F1["📝 Fichiers MD"] --> F2["⚙️ Formatage<br/>Mistral Instruct"]
+        F2 --> F3["📊 train_dataset.jsonl<br/>val_dataset.jsonl"]
+    end
+
+    subgraph ENTRAINEMENT["7. FINE-TUNING"]
+        G1["📊 Dataset JSONL"] --> G2{"Choix version"}
+        G2 -->|V1 Champs| G3["train.py<br/>Génération par champs"]
+        G2 -->|V2 Documents| G4["train2.py<br/>Documents complets"]
+        G3 --> G5["💾 Modèle fine-tuné<br/>+ Adaptateurs LoRA"]
+        G4 --> G5
+    end
+
+    COLLECTE --> CLASSIFICATION
+    CLASSIFICATION --> NETTOYAGE
+    NETTOYAGE --> APPARIEMENT
+    APPARIEMENT --> CONVERSION
+    CONVERSION --> PREPARATION
+    PREPARATION --> ENTRAINEMENT
+
+    style COLLECTE fill:#e1f5fe
+    style CLASSIFICATION fill:#fff3e0
+    style NETTOYAGE fill:#fce4ec
+    style APPARIEMENT fill:#f3e5f5
+    style CONVERSION fill:#e8f5e9
+    style PREPARATION fill:#fff8e1
+    style ENTRAINEMENT fill:#e3f2fd
+            </div>
+        </section>
+
+        <!-- INVENTAIRE DES PROGRAMMES -->
+        <section id="inventory">
+            <h2>📦 3. Inventaire des Programmes</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Étape</th>
+                        <th>Programme</th>
+                        <th>Statut</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1</td>
+                        <td>Collecte</td>
+                        <td><code>extraction_sql.sql</code></td>
+                        <td><span class="status status-missing">À déposer</span></td>
+                        <td>Requête SQL pour identifier les documents EDB/NDC</td>
+                    </tr>
+                    <tr>
+                        <td>2</td>
+                        <td>Collecte</td>
+                        <td><code>download_files.py</code></td>
+                        <td><span class="status status-missing">À déposer</span></td>
+                        <td>Téléchargement des fichiers depuis l'outil interne</td>
+                    </tr>
+                    <tr>
+                        <td>3</td>
+                        <td>Classification</td>
+                        <td><code>classify_documents.py</code></td>
+                        <td><span class="status status-missing">À déposer</span></td>
+                        <td>Scoring automatique EDB vs NDC vs AUTRE</td>
+                    </tr>
+                    <tr>
+                        <td>4</td>
+                        <td>Nettoyage</td>
+                        <td><code>pipeline_nettoyage_complet.py</code></td>
+                        <td><span class="status status-ok">✓ Présent</span></td>
+                        <td>Déduplication PDF/Word + renommage RITM + copie</td>
+                    </tr>
+                    <tr>
+                        <td>5</td>
+                        <td>Appariement</td>
+                        <td><code>couples_edb_ndc.py</code></td>
+                        <td><span class="status status-ok">✓ Présent</span></td>
+                        <td>Matching EDB-NDC par RITM + rapport couverture</td>
+                    </tr>
+                    <tr>
+                        <td>6</td>
+                        <td>Conversion</td>
+                        <td><code>extract.py</code></td>
+                        <td><span class="status status-ok">✓ Présent</span></td>
+                        <td>Extraction de contenu depuis documents Word</td>
+                    </tr>
+                    <tr>
+                        <td>7</td>
+                        <td>Conversion</td>
+                        <td><code>convert_devis_et_edb_docx_to_markdown.py</code></td>
+                        <td><span class="status status-ok">✓ Présent</span></td>
+                        <td>Conversion DOCX → Markdown via Docling</td>
+                    </tr>
+                    <tr>
+                        <td>8</td>
+                        <td>Préparation</td>
+                        <td><code>build_dataset_jsonl.py</code></td>
+                        <td><span class="status status-ok">✓ Présent</span></td>
+                        <td>Construction dataset JSONL format Mistral Instruct</td>
+                    </tr>
+                    <tr>
+                        <td>9</td>
+                        <td>Entraînement</td>
+                        <td><code>train.py</code></td>
+                        <td><span class="status status-ok">✓ Présent</span></td>
+                        <td>Fine-tuning V1 — Génération par champs</td>
+                    </tr>
+                    <tr>
+                        <td>10</td>
+                        <td>Entraînement</td>
+                        <td><code>train2.py</code></td>
+                        <td><span class="status status-ok">✓ Présent</span></td>
+                        <td>Fine-tuning V2 — Documents Markdown complets</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- ÉTAPE 1 - COLLECTE -->
+        <section id="step1-collect">
+            <h2>📥 4. Étape 1 — Collecte des Données</h2>
+            
+            <div class="warning-box">
+                <h5>⏳ Scripts à déposer</h5>
+                <p>Les scripts de collecte ne sont pas encore sur le repository.</p>
+            </div>
+
+            <h3>1.1 Extraction SQL</h3>
+            <div class="card">
+                <h4>extraction_sql.sql</h4>
+                <p><strong>Rôle :</strong> Requête SQL pour identifier les documents EDB et NDC dans l'outil interne.</p>
+                <p><strong>Sortie :</strong> Liste des fichiers à télécharger avec métadonnées (référence RITM, type, chemin)</p>
+                <p><strong>À documenter :</strong></p>
+                <ul>
+                    <li>Tables interrogées</li>
+                    <li>Critères de filtrage</li>
+                    <li>Champs extraits</li>
+                </ul>
+            </div>
+
+            <h3>1.2 Téléchargement</h3>
+            <div class="card">
+                <h4>download_files.py</h4>
+                <p><strong>Rôle :</strong> Téléchargement des fichiers identifiés par la requête SQL.</p>
+                <p><strong>Entrée :</strong> Liste des fichiers (CSV/Excel)</p>
+                <p><strong>Sortie :</strong> Dossier <span class="output-box">Data/</span> contenant les fichiers bruts (PDF + Word)</p>
+                <p><strong>À documenter :</strong></p>
+                <ul>
+                    <li>Méthode de connexion à l'outil interne</li>
+                    <li>Gestion des erreurs et reprises</li>
+                    <li>Format de log</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- ÉTAPE 2 - CLASSIFICATION -->
+        <section id="step2-classify">
+            <h2>🏷️ 5. Étape 2 — Classification</h2>
+            
+            <div class="warning-box">
+                <h5>⏳ Script à déposer</h5>
+                <p>Le script de classification n'est pas encore sur le repository.</p>
+            </div>
+
+            <div class="card">
+                <h4>classify_documents.py</h4>
+                <p><strong>Rôle :</strong> Classification automatique des documents en EDB, NDC ou AUTRE via un système de scoring.</p>
+                <p><strong>Entrée :</strong> Dossier <span class="file-box">Data/</span></p>
+                <p><strong>Sortie :</strong> <span class="output-box">analyse_documents.xlsx</span></p>
+                
+                <h5 style="margin-top: 1rem;">Colonnes du fichier Excel de sortie :</h5>
+                <table>
+                    <tr><td><code>Filename_Original</code></td><td>Nom du fichier original</td></tr>
+                    <tr><td><code>Reference</code></td><td>Référence RITM extraite</td></tr>
+                    <tr><td><code>RITM_Parent</code></td><td>RITM parent si applicable</td></tr>
+                    <tr><td><code>Type_Document</code></td><td>EDB | NDC | AUTRE</td></tr>
+                    <tr><td><code>Score_EDB</code></td><td>Score de classification EDB</td></tr>
+                    <tr><td><code>Score_NDC</code></td><td>Score de classification NDC</td></tr>
+                </table>
+
+                <h5 style="margin-top: 1rem;">Critères de scoring (à documenter) :</h5>
+                <ul>
+                    <li>Mots-clés spécifiques EDB vs NDC</li>
+                    <li>Structure du document</li>
+                    <li>Métadonnées du fichier</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- ÉTAPE 3 - NETTOYAGE -->
+        <section id="step3-clean">
+            <h2>🧹 6. Étape 3 — Nettoyage & Déduplication</h2>
+            
+            <div class="card">
+                <h4><span class="step-num">4</span> pipeline_nettoyage_complet.py</h4>
+                <p><strong>Statut :</strong> <span class="status status-ok">✓ Présent sur le repo</span></p>
+                
+                <div class="grid-2" style="margin-top: 1rem;">
+                    <div>
+                        <h5>📥 Entrées</h5>
+                        <ul>
+                            <li><span class="file-box">analyse_documents.xlsx</span></li>
+                            <li>Dossier <span class="file-box">Data/</span></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h5>📤 Sorties</h5>
+                        <ul>
+                            <li>Dossier <span class="output-box">clean2/</span></li>
+                            <li><span class="output-box">analyse_documents_enrichi.xlsx</span></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h5 style="margin-top: 1.5rem;">Règles de traitement :</h5>
+                <table>
+                    <tr>
+                        <th>Règle</th>
+                        <th>Action</th>
+                    </tr>
+                    <tr>
+                        <td>Type = <code>AUTRE</code></td>
+                        <td>→ Supprimé (non EDB/NDC)</td>
+                    </tr>
+                    <tr>
+                        <td>PDF existe ET Word (.doc/.docx) avec même nom existe</td>
+                        <td>→ PDF supprimé, Word conservé</td>
+                    </tr>
+                    <tr>
+                        <td>Fichier conservé</td>
+                        <td>→ Renommé <code>{RITM}-{TYPE}-{nom}.ext</code></td>
+                    </tr>
+                    <tr>
+                        <td>Fichier renommé</td>
+                        <td>→ Copié vers <code>clean2/</code></td>
+                    </tr>
+                </table>
+
+                <h5 style="margin-top: 1.5rem;">Colonnes ajoutées au Excel :</h5>
+                <ul>
+                    <li><code>Statut_Fichier</code> : CONSERVE | SUPPRIME</li>
+                    <li><code>Nom_Fichier_Clean2</code> : Nouveau nom après renommage</li>
+                </ul>
+
+                <h5 style="margin-top: 1.5rem;">Exécution :</h5>
+                <pre><code>python pipeline_nettoyage_complet.py</code></pre>
+            </div>
+        </section>
+
+        <!-- ÉTAPE 4 - APPARIEMENT -->
+        <section id="step4-match">
+            <h2>🔗 7. Étape 4 — Appariement EDB-NDC</h2>
+            
+            <div class="card">
+                <h4><span class="step-num">5</span> couples_edb_ndc.py</h4>
+                <p><strong>Statut :</strong> <span class="status status-ok">✓ Présent sur le repo</span></p>
+                
+                <div class="grid-2" style="margin-top: 1rem;">
+                    <div>
+                        <h5>📥 Entrées</h5>
+                        <ul>
+                            <li><span class="file-box">analyse_documents_enrichi.xlsx</span></li>
+                            <li>Dossier <span class="file-box">clean2/</span></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h5>📤 Sorties</h5>
+                        <ul>
+                            <li><span class="output-box">couverture_EDB_NDC_par_RITM.xlsx</span></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h5 style="margin-top: 1.5rem;">Logique de matching :</h5>
+                <ol>
+                    <li>Extraction des RITM uniques (colonnes <code>Reference</code> + <code>RITM_Parent</code>)</li>
+                    <li>Pour chaque RITM : comptage des EDB et NDC associées</li>
+                    <li>Identification des <strong>couples complets</strong> (au moins 1 EDB + 1 NDC)</li>
+                    <li>Détection de la présence de PDF dans les couples</li>
+                </ol>
+
+                <h5 style="margin-top: 1.5rem;">Colonnes du rapport de couverture :</h5>
+                <table>
+                    <tr><td><code>RITM</code></td><td>Référence unique du projet</td></tr>
+                    <tr><td><code>Nb_EDB</code></td><td>Nombre d'Expressions de Besoins</td></tr>
+                    <tr><td><code>Nb_NDC</code></td><td>Nombre de Notes de Cadrage</td></tr>
+                    <tr><td><code>Couple_EDB_NDC</code></td><td>OUI si au moins 1 EDB et 1 NDC</td></tr>
+                    <tr><td><code>Presence_PDF_EDB_NDC</code></td><td>OUI si au moins un fichier PDF</td></tr>
+                    <tr><td><code>Documents_EDB</code></td><td>Liste des fichiers EDB (séparés par |)</td></tr>
+                    <tr><td><code>Documents_NDC</code></td><td>Liste des fichiers NDC (séparés par |)</td></tr>
+                </table>
+
+                <h5 style="margin-top: 1.5rem;">Exécution :</h5>
+                <pre><code>python couples_edb_ndc.py</code></pre>
+            </div>
+        </section>
+
+        <!-- ÉTAPE 5 - CONVERSION -->
+        <section id="step5-convert">
+            <h2>📝 8. Étape 5 — Conversion Markdown</h2>
+            
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <h4><span class="step-num">6</span> extract.py</h4>
+                <p><strong>Statut :</strong> <span class="status status-ok">✓ Présent sur le repo</span></p>
+                <p><strong>Rôle :</strong> Extraction de contenu textuel depuis les documents Word.</p>
+            </div>
+
+            <div class="card">
+                <h4><span class="step-num">7</span> convert_devis_et_edb_docx_to_markdown.py</h4>
+                <p><strong>Statut :</strong> <span class="status status-ok">✓ Présent sur le repo</span></p>
+                
+                <div class="grid-2" style="margin-top: 1rem;">
+                    <div>
+                        <h5>📥 Entrées</h5>
+                        <ul>
+                            <li>Fichiers DOCX des couples EDB-NDC</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h5>📤 Sorties</h5>
+                        <ul>
+                            <li>Fichiers <span class="output-box">.md</span> (Markdown)</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h5 style="margin-top: 1.5rem;">Outil utilisé :</h5>
+                <p><strong>Docling</strong> (IBM) — Bibliothèque de conversion de documents vers Markdown avec préservation de la structure.</p>
+
+                <div class="info-box">
+                    <h5>💡 Pourquoi Markdown ?</h5>
+                    <p>Le format Markdown est idéal pour l'entraînement de LLM car il préserve la structure (titres, listes, tableaux) tout en restant du texte brut facilement tokenisable.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ÉTAPE 6 - PRÉPARATION DATASET -->
+        <section id="step6-dataset">
+            <h2>📊 9. Étape 6 — Préparation du Dataset</h2>
+            
+            <div class="card">
+                <h4><span class="step-num">8</span> build_dataset_jsonl.py</h4>
+                <p><strong>Statut :</strong> <span class="status status-ok">✓ Présent sur le repo</span></p>
+                
+                <div class="grid-2" style="margin-top: 1rem;">
+                    <div>
+                        <h5>📥 Entrées</h5>
+                        <ul>
+                            <li>Fichiers Markdown (couples EDB-NDC)</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h5>📤 Sorties</h5>
+                        <ul>
+                            <li><span class="output-box">dataset/train_dataset.jsonl</span></li>
+                            <li><span class="output-box">dataset/val_dataset.jsonl</span></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h5 style="margin-top: 1.5rem;">Format JSONL — Mistral Instruct :</h5>
+                <pre><code>{
+  "messages": [
+    {
+      "role": "user",
+      "content": "[INST] &lt;TASK&gt;contexte_proj&lt;/TASK&gt;\n&lt;CONTEXT&gt;\nclient: Banque ABC\nsecteur: Bancaire\n&lt;/CONTEXT&gt; [/INST]"
+    },
+    {
+      "role": "assistant",
+      "content": "&lt;START&gt;Le projet s'inscrit dans le cadre de la modernisation...&lt;/END&gt;"
+    }
+  ]
+}</code></pre>
+
+                <div class="info-box">
+                    <h5>📝 Format V1 vs V2</h5>
+                    <p><strong>V1 (train.py)</strong> : Utilise les balises <code>&lt;TASK&gt;</code>, <code>&lt;CONTEXT&gt;</code>, <code>&lt;START&gt;</code>, <code>&lt;END&gt;</code> pour structurer les champs individuels.</p>
+                    <p><strong>V2 (train2.py)</strong> : Le contenu user est l'expression de besoin complète, le contenu assistant est le devis complet. Pas de balises spéciales.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ÉTAPE 7 - ENTRAÎNEMENT -->
+        <section id="step7-train">
+            <h2>🧠 10. Étape 7 — Entraînement (Fine-tuning)</h2>
+            
+            <p>Deux scripts d'entraînement sont disponibles selon le cas d'usage :</p>
+
+            <!-- TRAIN.PY V1 -->
+            <div class="card v1" style="margin: 1.5rem 0;">
+                <h4><span class="step-num">9</span> train.py <span class="version-badge v1">V1 — Champs individuels</span></h4>
+                <p><strong>Statut :</strong> <span class="status status-ok">✓ Présent sur le repo</span></p>
+                
+                <h5 style="margin-top: 1rem;">🎯 Cas d'usage</h5>
+                <p>Génération de <strong>champs individuels</strong> d'une Note de Cadrage (contexte, objectifs, risques, etc.) avec balises <code>&lt;START&gt;</code> / <code>&lt;END&gt;</code> pour délimiter les réponses.</p>
+                <p><em>Idéal pour une interface interactive où l'utilisateur génère section par section.</em></p>
+
+                <h5 style="margin-top: 1rem;">⚙️ Configuration</h5>
+                <table>
+                    <tr><th>Paramètre</th><th>Valeur</th></tr>
+                    <tr><td>Modèle de base</td><td><code>mistralai/Mistral-7B-Instruct-v0.3</code></td></tr>
+                    <tr><td>Output directory</td><td><code>/home/quentin/mistral-banking</code></td></tr>
+                    <tr><td>Max prompt length</td><td>1 536 tokens</td></tr>
+                    <tr><td>Max response length</td><td>768 tokens</td></tr>
+                    <tr><td>Max total length</td><td>2 304 tokens</td></tr>
+                    <tr><td>LoRA rank (r)</td><td>128</td></tr>
+                    <tr><td>LoRA alpha</td><td>256</td></tr>
+                    <tr><td>LoRA dropout</td><td>0.1</td></tr>
+                    <tr><td>Batch size</td><td>8</td></tr>
+                    <tr><td>Gradient accumulation</td><td>4</td></tr>
+                    <tr><td>Effective batch size</td><td>32</td></tr>
+                    <tr><td>Learning rate</td><td>3e-5</td></tr>
+                    <tr><td>Epochs</td><td>2</td></tr>
+                    <tr><td>Warmup ratio</td><td>0.05</td></tr>
+                    <tr><td>Precision</td><td>bfloat16</td></tr>
+                    <tr><td>Attention</td><td>SDPA (PyTorch natif)</td></tr>
+                    <tr><td>Gradient checkpointing</td><td>✓ Activé</td></tr>
+                </table>
+
+                <h5 style="margin-top: 1rem;">📋 Validation</h5>
+                <p>Pendant l'entraînement, le script vérifie la présence des balises <code>&lt;START&gt;</code> et <code>&lt;END&gt;</code> dans les réponses générées. Le taux de tags corrects est loggé dans TensorBoard (<code>val_gen/tag_rate</code>).</p>
+
+                <h5 style="margin-top: 1rem;">🚀 Commandes</h5>
+                <pre><code># Entraînement from scratch
+python train.py
+
+# Reprendre depuis le dernier checkpoint
+python train.py --resume
+
+# Reprendre depuis un checkpoint spécifique
+python train.py --resume-from /path/to/checkpoint
+
+# Fichiers personnalisés
+python train.py --train-file data/train.jsonl --val-file data/val.jsonl
+
+# Désactiver SDPA
+python train.py --no-sdpa</code></pre>
+            </div>
+
+            <!-- TRAIN2.PY V2 -->
+            <div class="card v2" style="margin: 1.5rem 0;">
+                <h4><span class="step-num">10</span> train2.py <span class="version-badge v2">V2 — Documents complets</span></h4>
+                <p><strong>Statut :</strong> <span class="status status-ok">✓ Présent sur le repo</span></p>
+                
+                <h5 style="margin-top: 1rem;">🎯 Cas d'usage</h5>
+                <p>Génération de <strong>documents Markdown complets</strong> : le modèle reçoit une Expression de Besoin complète et génère un Devis/NDC complet.</p>
+                <p><em>Idéal pour la génération batch ou la création de documents autonomes.</em></p>
+
+                <h5 style="margin-top: 1rem;">⚙️ Configuration</h5>
+                <table>
+                    <tr><th>Paramètre</th><th>Valeur</th></tr>
+                    <tr><td>Modèle de base</td><td><code>mistralai/Mistral-7B-Instruct-v0.3</code></td></tr>
+                    <tr><td>Output directory</td><td><code>/home/quentin/mistral-devis</code></td></tr>
+                    <tr><td>Max prompt length</td><td><strong>6 144 tokens</strong> (~4x V1)</td></tr>
+                    <tr><td>Max response length</td><td><strong>8 192 tokens</strong> (~10x V1)</td></tr>
+                    <tr><td>Max total length</td><td><strong>14 336 tokens</strong> (~6x V1)</td></tr>
+                    <tr><td>LoRA rank (r)</td><td>128</td></tr>
+                    <tr><td>LoRA alpha</td><td>256</td></tr>
+                    <tr><td>LoRA dropout</td><td>0.1</td></tr>
+                    <tr><td>Batch size</td><td><strong>2</strong> (réduit car séquences longues)</td></tr>
+                    <tr><td>Gradient accumulation</td><td><strong>16</strong> (augmenté pour compenser)</td></tr>
+                    <tr><td>Effective batch size</td><td>32</td></tr>
+                    <tr><td>Learning rate</td><td><strong>2e-5</strong> (légèrement réduit)</td></tr>
+                    <tr><td>Epochs</td><td><strong>3</strong></td></tr>
+                    <tr><td>Warmup ratio</td><td>0.05</td></tr>
+                    <tr><td>Precision</td><td>bfloat16</td></tr>
+                    <tr><td>Attention</td><td>SDPA (PyTorch natif)</td></tr>
+                    <tr><td>Gradient checkpointing</td><td>✓ Activé (important pour longs contextes)</td></tr>
+                </table>
+
+                <h5 style="margin-top: 1rem;">📋 Validation</h5>
+                <p>Le script génère des aperçus de devis pendant la validation et mesure le temps de génération et le nombre de tokens générés (loggés dans TensorBoard).</p>
+
+                <h5 style="margin-top: 1rem;">🚀 Commandes</h5>
+                <pre><code># Entraînement from scratch
+python train2.py
+
+# Reprendre depuis le dernier checkpoint
+python train2.py --resume
+
+# Reprendre depuis un checkpoint spécifique
+python train2.py --resume-from /path/to/checkpoint
+
+# Fichiers et dossier personnalisés
+python train2.py --train-file data/train.jsonl --val-file data/val.jsonl --output-dir /path/to/output
+
+# Longueurs personnalisées
+python train2.py --max-prompt-length 4096 --max-response-length 6144</code></pre>
+            </div>
+
+            <!-- FICHIERS GÉNÉRÉS -->
+            <h3>📁 Fichiers générés par l'entraînement</h3>
+            <table>
+                <tr><th>Fichier/Dossier</th><th>Description</th></tr>
+                <tr><td><code>{output_dir}/</code></td><td>Dossier principal contenant le modèle final</td></tr>
+                <tr><td><code>{output_dir}/checkpoint-{step}/</code></td><td>Checkpoints intermédiaires</td></tr>
+                <tr><td><code>{output_dir}/generation_results/</code></td><td>Résultats de génération pendant validation (JSON)</td></tr>
+                <tr><td><code>{output_dir}/generation_history_complete.json</code></td><td>Historique complet des générations</td></tr>
+                <tr><td><code>{tensorboard_dir}/</code></td><td>Logs TensorBoard</td></tr>
+                <tr><td><code>training.log</code> / <code>training_v2.log</code></td><td>Logs texte de l'entraînement</td></tr>
+            </table>
+
+            <h3>📈 Monitoring avec TensorBoard</h3>
+            <pre><code># V1
+tensorboard --logdir=/home/quentin/runs/mistral-banking
+
+# V2
+tensorboard --logdir=/home/quentin/runs/mistral-devis</code></pre>
+            
+            <p><strong>Métriques disponibles :</strong></p>
+            <ul>
+                <li><code>train/loss</code> — Loss d'entraînement</li>
+                <li><code>eval/loss</code> — Loss de validation</li>
+                <li><code>val_gen/tag_rate</code> — Taux de balises correctes (V1 uniquement)</li>
+                <li><code>val_gen/avg_generation_time</code> — Temps moyen de génération</li>
+                <li><code>val_gen/avg_tokens_generated</code> — Nombre moyen de tokens générés (V2)</li>
+            </ul>
+        </section>
+
+        <!-- COMPARAISON TRAIN.PY VS TRAIN2.PY -->
+        <section id="train-comparison">
+            <h2>⚖️ 11. Comparaison train.py vs train2.py</h2>
+            
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Aspect</th>
+                        <th class="highlight-v1">train.py (V1)</th>
+                        <th class="highlight-v2">train2.py (V2)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Objectif</strong></td>
+                        <td class="highlight-v1">Générer des champs individuels de NDC</td>
+                        <td class="highlight-v2">Générer des documents complets</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Format entrée</strong></td>
+                        <td class="highlight-v1"><code>&lt;TASK&gt;champ&lt;/TASK&gt;&lt;CONTEXT&gt;...&lt;/CONTEXT&gt;</code></td>
+                        <td class="highlight-v2">Expression de besoin complète (Markdown)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Format sortie</strong></td>
+                        <td class="highlight-v1"><code>&lt;START&gt;contenu&lt;/END&gt;</code></td>
+                        <td class="highlight-v2">Devis complet (Markdown)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Max prompt</strong></td>
+                        <td class="highlight-v1">1 536 tokens</td>
+                        <td class="highlight-v2">6 144 tokens</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Max response</strong></td>
+                        <td class="highlight-v1">768 tokens</td>
+                        <td class="highlight-v2">8 192 tokens</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Contexte total</strong></td>
+                        <td class="highlight-v1">2 304 tokens</td>
+                        <td class="highlight-v2">14 336 tokens</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Batch size</strong></td>
+                        <td class="highlight-v1">8</td>
+                        <td class="highlight-v2">2</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Gradient accumulation</strong></td>
+                        <td class="highlight-v1">4</td>
+                        <td class="highlight-v2">16</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Learning rate</strong></td>
+                        <td class="highlight-v1">3e-5</td>
+                        <td class="highlight-v2">2e-5</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Epochs</strong></td>
+                        <td class="highlight-v1">2</td>
+                        <td class="highlight-v2">3</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Output dir</strong></td>
+                        <td class="highlight-v1"><code>/home/quentin/mistral-banking</code></td>
+                        <td class="highlight-v2"><code>/home/quentin/mistral-devis</code></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Log file</strong></td>
+                        <td class="highlight-v1"><code>training.log</code></td>
+                        <td class="highlight-v2"><code>training_v2.log</code></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Validation spécifique</strong></td>
+                        <td class="highlight-v1">Vérification balises START/END</td>
+                        <td class="highlight-v2">Aperçu du devis généré</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Cas d'usage idéal</strong></td>
+                        <td class="highlight-v1">Interface interactive, génération à la demande</td>
+                        <td class="highlight-v2">Génération batch, documents autonomes</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="info-box">
+                <h5>💡 Quand utiliser quelle version ?</h5>
+                <ul>
+                    <li><strong>V1 (train.py)</strong> : Si vous avez une interface où l'utilisateur remplit progressivement une NDC et demande la génération de sections spécifiques (contexte, objectifs, risques, etc.).</li>
+                    <li><strong>V2 (train2.py)</strong> : Si vous voulez générer un document complet d'un seul coup à partir d'une expression de besoin, pour un traitement batch ou des documents autonomes.</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- STRUCTURE DU REPOSITORY -->
+        <section id="structure">
+            <h2>📁 12. Structure du Repository</h2>
+            <pre><code>ndc-dev/
+├── 📄 README.md
+├── 📄 requirements.txt
+├── 🔧 install.sh                              # Script d'installation
+├── 🔧 run_train.sh                            # Lanceur d'entraînement
+│
+├── ─────────── PRÉPARATION DES DONNÉES ───────────
+├── 📜 pipeline_nettoyage_complet.py           # Étape 3 - Nettoyage
+├── 📜 couples_edb_ndc.py                      # Étape 4 - Appariement
+├── 📜 extract.py                              # Étape 5 - Extraction Word
+├── 📜 convert_devis_et_edb_docx_to_markdown.py # Étape 5 - Conversion MD
+├── 📜 build_dataset_jsonl.py                  # Étape 6 - Dataset JSONL
+│
+├── ─────────── ENTRAÎNEMENT ───────────
+├── 📜 train.py                                # V1 - Champs individuels
+├── 📜 train2.py                               # V2 - Documents complets
+│
+├── ─────────── DONNÉES ───────────
+└── 📁 dataset/
+    ├── train_dataset.jsonl                    # Données d'entraînement
+    └── val_dataset.jsonl                      # Données de validation</code></pre>
+
+            <h3>Dépendances principales</h3>
+            <pre><code>torch==2.9.1
+transformers==4.57.3
+peft==0.18.1
+datasets==4.4.2
+accelerate==1.12.0
+pandas
+openpyxl
+docling  # Pour conversion DOCX → MD</code></pre>
+
+            <h3>Prérequis matériels</h3>
+            <table>
+                <tr><th>Ressource</th><th>Minimum</th><th>Recommandé</th></tr>
+                <tr><td>GPU VRAM</td><td>24 Go (V1 uniquement)</td><td>80 Go (H100)</td></tr>
+                <tr><td>CUDA</td><td>12.0+</td><td>12.8+</td></tr>
+                <tr><td>Python</td><td>3.10+</td><td>3.12</td></tr>
+            </table>
+        </section>
+
+        <!-- TODO -->
+        <section>
+            <h2>✅ TODO — Scripts à déposer</h2>
+            <ul class="todo-list">
+                <li>Script d'extraction SQL depuis l'outil interne</li>
+                <li>Script de téléchargement des fichiers</li>
+                <li>Script de classification/scoring (génère <code>analyse_documents.xlsx</code>)</li>
+                <li class="done">pipeline_nettoyage_complet.py</li>
+                <li class="done">couples_edb_ndc.py</li>
+                <li class="done">extract.py</li>
+                <li class="done">convert_devis_et_edb_docx_to_markdown.py</li>
+                <li class="done">build_dataset_jsonl.py</li>
+                <li class="done">train.py (V1)</li>
+                <li class="done">train2.py (V2)</li>
+            </ul>
+        </section>
+
+        <footer style="text-align: center; padding: 2rem; color: var(--gray-700);">
+            <p><strong>SCRIBE AI</strong> — Documentation Pipeline de Données</p>
+            <p>Projet propriétaire, usage interne uniquement</p>
+            <p>Dernière mise à jour : Janvier 2025</p>
+        </footer>
+    </div>
+
+    <script>
+        mermaid.initialize({ 
+            startOnLoad: true,
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#4F46E5',
+                primaryTextColor: '#fff',
+                primaryBorderColor: '#4338CA',
+                lineColor: '#6B7280',
+                secondaryColor: '#F3F4F6',
+                tertiaryColor: '#EEF2FF'
+            }
+        });
+    </script>
+</body>
+</html>
